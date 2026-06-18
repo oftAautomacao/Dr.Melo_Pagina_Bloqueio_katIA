@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pausa IA — Dr. Melo</title>
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 280px;
+      min-height: 200px;
+      background: #0f0f1a;
+      color: #fff;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: linear-gradient(135deg, #1a1a3e 0%, #16213e 100%);
+      padding: 16px 18px 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-icon {
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .header-text h1 {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 0.01em;
+    }
+
+    .header-text p {
+      font-size: 10px;
+      color: rgba(255,255,255,0.4);
+      margin-top: 1px;
+    }
+
+    /* ── Conteúdo principal ── */
+    .content {
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* ── Status da aba ── */
+    .tab-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+
+    .tab-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .tab-dot.ativo    { background: #00e676; box-shadow: 0 0 6px #00e676; }
+    .tab-dot.inativo  { background: #555; }
+
+    .tab-label {
+      font-size: 11px;
+      color: rgba(255,255,255,0.6);
+    }
+
+    /* ── Card do contato atual ── */
+    .contact-card {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+
+    .contact-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.35);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+
+    .contact-nome {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .contact-numero {
+      font-size: 11px;
+      color: rgba(255,255,255,0.4);
+      font-family: 'Courier New', monospace;
+      margin-top: 2px;
+    }
+
+    .contact-vazio {
+      font-size: 12px;
+      color: rgba(255,255,255,0.3);
+      font-style: italic;
+    }
+
+    /* ── Badge de status da IA ── */
+    .ia-status-badge {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-radius: 10px;
+      padding: 10px 14px;
+      border: 1px solid;
+      transition: all 0.3s ease;
+    }
+
+    .ia-status-badge.ativa {
+      background: rgba(0, 200, 83, 0.1);
+      border-color: rgba(0, 200, 83, 0.3);
+    }
+
+    .ia-status-badge.pausada {
+      background: rgba(244, 67, 54, 0.1);
+      border-color: rgba(244, 67, 54, 0.3);
+    }
+
+    .ia-status-badge.desconhecida {
+      background: rgba(255,255,255,0.04);
+      border-color: rgba(255,255,255,0.08);
+    }
+
+    .badge-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge-emoji { font-size: 18px; }
+
+    .badge-text-main {
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .ia-status-badge.ativa    .badge-text-main { color: #00e676; }
+    .ia-status-badge.pausada  .badge-text-main { color: #ff5252; }
+    .ia-status-badge.desconhecida .badge-text-main { color: rgba(255,255,255,0.4); }
+
+    .badge-text-sub {
+      font-size: 10px;
+      color: rgba(255,255,255,0.3);
+    }
+
+    .badge-right {
+      font-size: 10px;
+      color: rgba(255,255,255,0.25);
+    }
+
+    /* ── Botão de ação ── */
+    .btn-acao {
+      width: 100%;
+      padding: 11px;
+      border: none;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      letter-spacing: 0.02em;
+    }
+
+    .btn-acao:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-acao.pausar {
+      background: linear-gradient(135deg, #d32f2f, #f44336);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(244, 67, 54, 0.35);
+    }
+
+    .btn-acao.pausar:not(:disabled):hover {
+      background: linear-gradient(135deg, #b71c1c, #d32f2f);
+      box-shadow: 0 6px 18px rgba(244, 67, 54, 0.5);
+      transform: translateY(-1px);
+    }
+
+    .btn-acao.reativar {
+      background: linear-gradient(135deg, #00897b, #00e676);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(0, 230, 118, 0.3);
+    }
+
+    .btn-acao.reativar:not(:disabled):hover {
+      background: linear-gradient(135deg, #00695c, #00c853);
+      box-shadow: 0 6px 18px rgba(0, 230, 118, 0.45);
+      transform: translateY(-1px);
+    }
+
+    /* ── Mensagem de feedback ── */
+    #feedback {
+      font-size: 11px;
+      text-align: center;
+      color: rgba(255,255,255,0.45);
+      min-height: 16px;
+      transition: opacity 0.3s;
+    }
+
+    /* ── Spinner ── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      padding: 8px 18px 12px;
+      text-align: center;
+      font-size: 9px;
+      color: rgba(255,255,255,0.15);
+      border-top: 1px solid rgba(255,255,255,0.05);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <span class="header-icon">🤖</span>
+    <div class="header-text">
+      <h1>Pausa IA — Dr. Melo</h1>
+      <p>Controle de atendimento automático</p>
+    </div>
+  </div>
+
+  <!-- Conteúdo -->
+  <div class="content">
+
+    <!-- Status da aba WhatsApp -->
+    <div class="tab-status" id="tab-status">
+      <div class="tab-dot inativo" id="tab-dot"></div>
+      <span class="tab-label" id="tab-label">Verificando aba do WhatsApp Web...</span>
+    </div>
+
+    <!-- Card do contato -->
+    <div class="contact-card" id="contact-card">
+      <div class="contact-label">Conversa atual</div>
+      <div class="contact-vazio" id="contact-content">Nenhuma conversa aberta</div>
+    </div>
+
+    <!-- Badge de status da IA -->
+    <div class="ia-status-badge desconhecida" id="ia-badge">
+      <div class="badge-left">
+        <span class="badge-emoji" id="badge-emoji">⏳</span>
+        <div>
+          <div class="badge-text-main" id="badge-main">Aguardando...</div>
+          <div class="badge-text-sub" id="badge-sub">Abra o WhatsApp Web</div>
+        </div>
+      </div>
+      <span class="badge-right" id="badge-right"></span>
+    </div>
+
+    <!-- Botão de ação -->
+    <button class="btn-acao pausar" id="btn-acao" disabled>
+      Pausar IA para este Paciente
+    </button>
+
+    <!-- Feedback -->
+    <div id="feedback"></div>
+
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    Firebase: oftautomacao-9b427 · /DRM/agendamentoWhatsApp/configuracoes/cancelados
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

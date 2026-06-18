@@ -1,0 +1,313 @@
+/* ============================================================
+   content.css — Estilos do botão flutuante (Layout Compacto)
+   Extensão: Pausa IA — Dr. Melo
+   ============================================================ */
+
+/* ---------- Container principal ---------- */
+#pausa-ia-widget {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  user-select: none;
+  transition: opacity 0.2s ease;
+}
+
+/* ---------- Card flutuante (Modo Barra Compacta) ---------- */
+#pausa-ia-card {
+  background: #1a1a2e;
+  border-radius: 24px;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.3),
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255,255,255,0.07);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  transition: box-shadow 0.2s ease;
+  cursor: move; /* Indica que a barra toda é arrastável */
+}
+
+#pausa-ia-widget:not(.arrastando) #pausa-ia-card:hover {
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.4),
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255,255,255,0.09);
+}
+
+/* Elementos da barra */
+#pausa-ia-icon {
+  font-size: 16px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+#pausa-ia-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  pointer-events: none;
+}
+
+#pausa-ia-numero {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.7);
+  font-family: 'Courier New', monospace;
+  min-width: 110px;
+  text-align: center;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+#pausa-ia-widget.sem-contato #pausa-ia-numero:hover {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}
+
+#pausa-ia-input-manual {
+  display: none;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff;
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  width: 110px;
+  text-align: center;
+  outline: none;
+}
+
+#pausa-ia-input-manual:focus {
+  border-color: #00e676;
+}
+
+#pausa-ia-widget.modo-manual #pausa-ia-numero {
+  display: none;
+}
+
+#pausa-ia-widget.modo-manual #pausa-ia-input-manual {
+  display: block;
+}
+
+/* Divisor vertical */
+.pausa-ia-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0 2px;
+}
+
+/* Botão Recarregar */
+#btn-recarregar,
+#btn-bloqueados {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  line-height: 1;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#btn-recarregar:hover,
+#btn-bloqueados:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+#btn-bloqueados {
+  font-size: 12px;
+}
+
+/* Animação Recarregar */
+@keyframes spin-once {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin-anim {
+  animation: spin-once 0.5s ease;
+}
+
+/* ---------- Toggle button ---------- */
+#pausa-ia-switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+#pausa-ia-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+#pausa-ia-slider {
+  position: absolute;
+  inset: 0;
+  border-radius: 24px;
+  transition: background 0.3s ease;
+  background: #444;
+}
+
+#pausa-ia-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  top: 3px;
+  left: 3px;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+
+/* Estado: IA ATIVA (toggle OFF = verde) */
+#pausa-ia-widget.ia-ativa #pausa-ia-slider {
+  background: linear-gradient(135deg, #00c853, #00e676);
+  box-shadow: 0 0 10px rgba(0, 200, 83, 0.3);
+}
+
+/* Estado: IA PAUSADA (toggle ON = vermelho) */
+#pausa-ia-widget.ia-pausada #pausa-ia-slider {
+  background: linear-gradient(135deg, #d32f2f, #f44336);
+  box-shadow: 0 0 10px rgba(244, 67, 54, 0.3);
+}
+
+#pausa-ia-widget.ia-pausada #pausa-ia-slider::before {
+  transform: translateX(18px);
+}
+
+/* ---------- Estado: sem conversa ---------- */
+#pausa-ia-widget.sem-contato #pausa-ia-card {
+  opacity: 0.6;
+}
+
+#pausa-ia-widget.sem-contato #pausa-ia-numero {
+  color: rgba(255,255,255,0.3);
+}
+
+/* ---------- Estado: carregando ---------- */
+#pausa-ia-widget.carregando #pausa-ia-slider {
+  background: #555;
+}
+
+#pausa-ia-widget.carregando #pausa-ia-numero {
+  color: rgba(255,255,255,0.4);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+#pausa-ia-widget.carregando #pausa-ia-slider::before {
+  animation: pulse 1s ease-in-out infinite;
+}
+
+/* ---------- Tooltip de feedback ---------- */
+#pausa-ia-toast {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: rgba(0,0,0,0.85);
+  color: #fff;
+  font-size: 11px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+#pausa-ia-toast.visivel {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#pausa-ia-bloqueados {
+  margin-top: 8px;
+  background: rgba(20, 20, 32, 0.96);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255,255,255,0.04);
+  overflow: hidden;
+  min-width: 280px;
+}
+
+.pausa-ia-bloqueados-header {
+  padding: 10px 12px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.58);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+#pausa-ia-bloqueados-lista {
+  max-height: 260px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.18) transparent;
+}
+
+.pausa-ia-bloqueado-item,
+.pausa-ia-bloqueados-info {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: rgba(255,255,255,0.82);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.pausa-ia-bloqueado-item {
+  width: 100%;
+  text-align: left;
+  cursor: copy;
+  user-select: text;
+}
+
+.pausa-ia-bloqueado-item:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.1);
+}
+
+.pausa-ia-bloqueado-item:active {
+  transform: translateY(1px);
+}
+
+.pausa-ia-bloqueado-item + .pausa-ia-bloqueado-item,
+.pausa-ia-bloqueados-info + .pausa-ia-bloqueado-item {
+  margin-top: 6px;
+}
+
+.pausa-ia-bloqueados-info {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  color: rgba(255,255,255,0.5);
+}

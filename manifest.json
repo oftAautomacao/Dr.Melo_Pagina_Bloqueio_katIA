@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Pausa IA — Dr. Melo",
+  "version": "1.0.0",
+  "description": "Controle a IA de atendimento do Dr. Melo diretamente pelo WhatsApp Web. Pause ou retome respostas automáticas para qualquer paciente com um clique.",
+  "icons": {
+    "16":  "icons/icon16.png",
+    "48":  "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "https://oftautomacao-9b427-default-rtdb.firebaseio.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["firebase-config.js", "content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Pausa IA — Dr. Melo",
+    "default_icon": {
+      "16":  "icons/icon16.png",
+      "48":  "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}
