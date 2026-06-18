@@ -172,7 +172,18 @@ function ehTextoStatusContato(texto) {
 }
 
 function ehTelefoneFirebaseValido(valor) {
-  return typeof valor === 'string' && /^55\d{10,11}$/.test(valor.trim());
+  if (typeof valor !== 'string') return false;
+
+  const texto = valor.trim();
+  if (!texto) return false;
+
+  const textoMinusculo = texto.toLowerCase();
+  return (
+    /\d/.test(texto) &&
+    !texto.includes('-') &&
+    !texto.includes('@') &&
+    !textoMinusculo.includes('group')
+  );
 }
 
 function extrairTelefoneValidoDoRegistro(chave, item) {
@@ -604,6 +615,22 @@ function mostrarToast(mensagem, duracao = 2500) {
   setTimeout(() => toast.classList.remove('visivel'), duracao);
 }
 
+function animarRobo(tipo) {
+  const robo = document.getElementById('pausa-ia-icon');
+  if (!robo) return;
+
+  const classe = tipo === 'pausada' ? 'animar-pausada' : 'animar-ativa';
+  robo.classList.remove('animar-ativa', 'animar-pausada');
+
+  // Reinicia a animação mesmo em cliques consecutivos.
+  void robo.offsetWidth;
+  robo.classList.add(classe);
+
+  setTimeout(() => {
+    robo.classList.remove(classe);
+  }, 900);
+}
+
 // ──────────────────────────────────────────────
 // Lógica do Toggle
 // ──────────────────────────────────────────────
@@ -618,6 +645,7 @@ async function pausarNumeroManual(numero, nomeContato) {
 
     estadoAtual.chaveFirebase = numero;
     estadoAtual.iaPausada = true;
+    animarRobo('pausada');
     if (painelBloqueadosEl && !painelBloqueadosEl.hasAttribute('hidden')) {
       await recarregarListaBloqueados();
     }
@@ -658,6 +686,7 @@ async function aoClicarToggle(event) {
       );
       estadoAtual.chaveFirebase = chave;
       estadoAtual.iaPausada = true;
+      animarRobo('pausada');
       if (painelBloqueadosEl && !painelBloqueadosEl.hasAttribute('hidden')) {
         await recarregarListaBloqueados();
       }
@@ -674,6 +703,7 @@ async function aoClicarToggle(event) {
         estadoAtual.chaveFirebase = null;
       }
       estadoAtual.iaPausada = false;
+      animarRobo('ativa');
       if (painelBloqueadosEl && !painelBloqueadosEl.hasAttribute('hidden')) {
         await recarregarListaBloqueados();
       }
@@ -862,6 +892,7 @@ chrome.runtime.onMessage.addListener((mensagem, _sender, sendResponse) => {
           );
           estadoAtual.chaveFirebase = chave;
           estadoAtual.iaPausada     = true;
+          animarRobo('pausada');
           if (painelBloqueadosEl && !painelBloqueadosEl.hasAttribute('hidden')) {
             await recarregarListaBloqueados();
           }
@@ -892,6 +923,7 @@ chrome.runtime.onMessage.addListener((mensagem, _sender, sendResponse) => {
           }
           estadoAtual.chaveFirebase = null;
           estadoAtual.iaPausada     = false;
+          animarRobo('ativa');
           if (painelBloqueadosEl && !painelBloqueadosEl.hasAttribute('hidden')) {
             await recarregarListaBloqueados();
           }
