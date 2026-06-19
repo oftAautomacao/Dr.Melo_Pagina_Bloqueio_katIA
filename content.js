@@ -373,7 +373,7 @@ function criarWidget() {
   widget.innerHTML = `
     <div id="pausa-ia-toast"></div>
     <div id="pausa-ia-card" title="Arraste para mover">
-      <span id="pausa-ia-icon">🤖</span>
+      <span id="pausa-ia-icon" title="Clique para pausar ou reativar a IA">🤖</span>
       <span id="pausa-ia-title">IA</span>
       <div class="pausa-ia-divider"></div>
       <span id="pausa-ia-numero" title="Clique para inserir manualmente">—</span>
@@ -381,10 +381,6 @@ function criarWidget() {
       <div class="pausa-ia-divider"></div>
       <button id="btn-recarregar" title="Forçar recarregamento">↻</button>
       <button id="btn-bloqueados" title="Mostrar bloqueados">▾</button>
-      <label id="pausa-ia-switch" title="Pausar / retomar IA">
-        <input type="checkbox" id="pausa-ia-checkbox" />
-        <span id="pausa-ia-slider"></span>
-      </label>
     </div>
     <div id="pausa-ia-bloqueados" hidden>
       <div class="pausa-ia-bloqueados-header">Bloqueados atuais</div>
@@ -393,9 +389,10 @@ function criarWidget() {
   `;
 
   document.body.appendChild(widget);
-
-  // Evento de clique no toggle
-  document.getElementById('pausa-ia-checkbox').addEventListener('change', aoClicarToggle);
+  document.getElementById('pausa-ia-icon').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await aoClicarRobo();
+  });
 
   // Evento Recarregar
   document.getElementById('btn-recarregar').addEventListener('click', async (e) => {
@@ -531,9 +528,9 @@ function criarWidget() {
   card.addEventListener('mousedown', (e) => {
     // Ignora o clique se for nos botões ou checkbox (para não conflitar com a ação deles)
     if (
+      e.target.closest('#pausa-ia-icon') ||
       e.target.closest('#btn-recarregar') ||
       e.target.closest('#btn-bloqueados') ||
-      e.target.closest('#pausa-ia-switch') ||
       e.target.closest('#pausa-ia-input-manual') ||
       e.target.closest('#pausa-ia-bloqueados')
     ) return; 
@@ -577,7 +574,6 @@ function criarWidget() {
 function atualizarWidget() {
   const widget   = document.getElementById('pausa-ia-widget');
   const elNumero = document.getElementById('pausa-ia-numero');
-  const elCheck  = document.getElementById('pausa-ia-checkbox');
   if (!widget) return;
 
   // Remove todas as classes de estado
@@ -592,7 +588,6 @@ function atualizarWidget() {
   if (!estadoAtual.numeroFormatado) {
     widget.classList.add('sem-contato');
     elNumero.textContent = 'Sem contato';
-    elCheck.checked = false;
     return;
   }
 
@@ -600,10 +595,8 @@ function atualizarWidget() {
 
   if (estadoAtual.iaPausada) {
     widget.classList.add('ia-pausada');
-    elCheck.checked = true;
   } else {
     widget.classList.add('ia-ativa');
-    elCheck.checked = false;
   }
 }
 
@@ -617,17 +610,22 @@ function mostrarToast(mensagem, duracao = 2500) {
 
 function animarRobo(tipo) {
   const robo = document.getElementById('pausa-ia-icon');
-  if (!robo) return;
+  const widget = document.getElementById('pausa-ia-widget');
+  if (!robo || !widget) return;
 
   const classe = tipo === 'pausada' ? 'animar-pausada' : 'animar-ativa';
+  const classeWidget = tipo === 'pausada' ? 'flash-pausada' : 'flash-ativa';
   robo.classList.remove('animar-ativa', 'animar-pausada');
+  widget.classList.remove('flash-ativa', 'flash-pausada');
 
   // Reinicia a animação mesmo em cliques consecutivos.
   void robo.offsetWidth;
   robo.classList.add(classe);
+  widget.classList.add(classeWidget);
 
   setTimeout(() => {
     robo.classList.remove(classe);
+    widget.classList.remove(classeWidget);
   }, 900);
 }
 
@@ -661,15 +659,14 @@ async function pausarNumeroManual(numero, nomeContato) {
   }
 }
 
-async function aoClicarToggle(event) {
+async function aoClicarRobo() {
   // Impede ação se não houver contato detectado
   if (!estadoAtual.numeroFormatado) {
-    event.target.checked = false;
     mostrarToast('⚠️ Nenhum contato detectado');
     return;
   }
 
-  const querPausar = event.target.checked; // true = pausar, false = reativar
+  const querPausar = !estadoAtual.iaPausada;
 
   estadoAtual.carregando = true;
   atualizarWidget();
@@ -712,8 +709,6 @@ async function aoClicarToggle(event) {
   } catch (erro) {
     console.error('[Pausa IA] Erro ao comunicar com Firebase:', erro);
     mostrarToast('❌ Erro ao conectar com Firebase');
-    // Reverte o estado visual do toggle
-    event.target.checked = !querPausar;
   } finally {
     estadoAtual.carregando = false;
     atualizarWidget();

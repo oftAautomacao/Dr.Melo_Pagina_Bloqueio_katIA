@@ -41,26 +41,86 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 7px;
-  padding: 6px 8px 6px 11px;
+  gap: 4px;
+  padding: 6px 5px 6px 7px;
   border: 1px solid var(--pausa-ia-line);
   backdrop-filter: blur(10px);
   transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
   cursor: move; /* Indica que a barra toda é arrastável */
 }
 
+#pausa-ia-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0;
+  transform: scaleX(0.18);
+  transform-origin: 12px center;
+  pointer-events: none;
+}
+
+#pausa-ia-card > * {
+  position: relative;
+  z-index: 1;
+}
+
 #pausa-ia-widget.ia-ativa #pausa-ia-card {
   background:
-    radial-gradient(circle at 14% 50%, rgba(37, 211, 102, 0.1), transparent 30%),
-    radial-gradient(circle at 82% 18%, rgba(18, 140, 126, 0.09), transparent 26%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(226, 244, 233, 0.99));
+    radial-gradient(circle at 14% 50%, rgba(37, 211, 102, 0.18), transparent 30%),
+    radial-gradient(circle at 82% 18%, rgba(18, 140, 126, 0.15), transparent 26%),
+    linear-gradient(135deg, rgba(248, 255, 251, 0.98), rgba(194, 229, 207, 0.99));
 }
 
 #pausa-ia-widget.ia-pausada #pausa-ia-card {
   background:
-    radial-gradient(circle at 14% 50%, rgba(244, 67, 54, 0.1), transparent 30%),
-    radial-gradient(circle at 82% 18%, rgba(229, 115, 115, 0.1), transparent 26%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(249, 228, 228, 0.99));
+    radial-gradient(circle at 14% 50%, rgba(244, 67, 54, 0.18), transparent 30%),
+    radial-gradient(circle at 82% 18%, rgba(229, 115, 115, 0.15), transparent 26%),
+    linear-gradient(135deg, rgba(255, 249, 249, 0.98), rgba(232, 199, 199, 0.99));
+}
+
+@keyframes caixa-onda-ativa {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.14);
+  }
+  22% {
+    opacity: 0.95;
+    transform: scaleX(0.45);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1.08);
+  }
+}
+
+@keyframes caixa-onda-pausada {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.14);
+  }
+  22% {
+    opacity: 0.92;
+    transform: scaleX(0.45);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1.08);
+  }
+}
+
+#pausa-ia-widget.flash-ativa #pausa-ia-card::after {
+  background:
+    radial-gradient(circle at 12px center, rgba(37, 211, 102, 0.56), transparent 24%),
+    linear-gradient(90deg, rgba(37, 211, 102, 0.38), rgba(37, 211, 102, 0.14));
+  animation: caixa-onda-ativa 0.75s ease-out;
+}
+
+#pausa-ia-widget.flash-pausada #pausa-ia-card::after {
+  background:
+    radial-gradient(circle at 12px center, rgba(244, 67, 54, 0.48), transparent 24%),
+    linear-gradient(90deg, rgba(244, 67, 54, 0.34), rgba(244, 67, 54, 0.12));
+  animation: caixa-onda-pausada 0.75s ease-out;
 }
 
 #pausa-ia-widget:not(.arrastando) #pausa-ia-card:hover {
@@ -74,17 +134,18 @@
 
 /* Elementos da barra */
 #pausa-ia-icon {
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   position: relative;
   isolation: isolate;
   overflow: visible;
-  width: 24px;
-  height: 24px;
+  width: 23px;
+  height: 23px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.98);
   box-shadow:
@@ -97,7 +158,7 @@
 #pausa-ia-icon::after {
   content: '';
   position: absolute;
-  inset: -2px;
+  inset: -1px;
   border-radius: 999px;
   border: 2px solid transparent;
   opacity: 0;
@@ -179,19 +240,19 @@
   background: rgba(255, 255, 255, 0.98);
   border: 1px solid rgba(18, 140, 126, 0.18);
   border-radius: 999px;
-  padding: 4px 8px;
+  padding: 4px 5px;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
 }
 
 #pausa-ia-numero {
   font-size: 13px;
-  font-weight: 600;
-  color: var(--pausa-ia-muted);
+  font-weight: 700;
+  color: rgba(17, 27, 33, 0.94);
   font-family: 'Courier New', monospace;
-  min-width: 110px;
+  min-width: 78px;
   text-align: center;
   cursor: pointer;
-  padding: 4px 7px;
+  padding: 4px 5px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.98);
   border: 1px solid rgba(18, 140, 126, 0.18);
@@ -210,10 +271,10 @@
   border: 1px solid rgba(17,27,33,0.08);
   color: rgba(17,27,33,0.92);
   border-radius: 999px;
-  padding: 4px 8px;
+  padding: 4px 5px;
   font-family: 'Courier New', monospace;
   font-size: 13px;
-  width: 110px;
+  width: 78px;
   text-align: center;
   outline: none;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
@@ -237,7 +298,7 @@
   width: 1px;
   height: 16px;
   background: linear-gradient(to bottom, transparent, rgba(17,27,33,0.12), transparent);
-  margin: 0 1px;
+  margin: 0 -1px;
 }
 
 /* Botão Recarregar */
@@ -246,9 +307,9 @@
   background: rgba(255,255,255,0.98);
   border: 1px solid rgba(17,27,33,0.06);
   color: rgba(17, 27, 33, 0.62);
-  font-size: 14px;
+  font-size: 12px;
   cursor: pointer;
-  padding: 3px;
+  padding: 3px 1px;
   border-radius: 999px;
   line-height: 1;
   transition: all 0.2s ease;
@@ -269,7 +330,7 @@
 }
 
 #btn-bloqueados {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 /* Animação Recarregar */
@@ -284,8 +345,8 @@
 /* ---------- Toggle button ---------- */
 #pausa-ia-switch {
   position: relative;
-  width: 40px;
-  height: 22px;
+  width: 32px;
+  height: 19px;
   cursor: pointer;
   flex-shrink: 0;
   margin-left: 0;
@@ -310,12 +371,12 @@
 #pausa-ia-slider::before {
   content: '';
   position: absolute;
-  width: 16px;
-  height: 16px;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
   background: #fff;
-  top: 3px;
-  left: 3px;
+  top: 2px;
+  left: 2px;
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   box-shadow:
     0 1px 4px rgba(0,0,0,0.3),
@@ -335,7 +396,7 @@
 }
 
 #pausa-ia-widget.ia-pausada #pausa-ia-slider::before {
-  transform: translateX(18px);
+  transform: translateX(15px);
 }
 
 /* ---------- Estado: sem conversa ---------- */
@@ -425,8 +486,9 @@
 .pausa-ia-bloqueado-item,
 .pausa-ia-bloqueados-info {
   font-family: 'Courier New', monospace;
-  font-size: 12px;
-  color: rgba(17, 27, 33, 0.86);
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(17, 27, 33, 0.94);
   background: rgba(255, 255, 255, 0.98);
   border: 1px solid rgba(18, 140, 126, 0.14);
   border-radius: 8px;
