@@ -67,16 +67,16 @@
 
 #pausa-ia-widget.ia-ativa #pausa-ia-card {
   background:
-    radial-gradient(circle at 14% 50%, rgba(37, 211, 102, 0.18), transparent 30%),
-    radial-gradient(circle at 82% 18%, rgba(18, 140, 126, 0.15), transparent 26%),
-    linear-gradient(135deg, rgba(248, 255, 251, 0.98), rgba(194, 229, 207, 0.99));
+    radial-gradient(circle at 14% 50%, rgba(37, 211, 102, 0.36), transparent 30%),
+    radial-gradient(circle at 82% 18%, rgba(18, 140, 126, 0.3), transparent 26%),
+    linear-gradient(135deg, rgba(233, 250, 239, 0.98), rgba(142, 201, 164, 0.99));
 }
 
 #pausa-ia-widget.ia-pausada #pausa-ia-card {
   background:
-    radial-gradient(circle at 14% 50%, rgba(244, 67, 54, 0.18), transparent 30%),
-    radial-gradient(circle at 82% 18%, rgba(229, 115, 115, 0.15), transparent 26%),
-    linear-gradient(135deg, rgba(255, 249, 249, 0.98), rgba(232, 199, 199, 0.99));
+    radial-gradient(circle at 14% 50%, rgba(244, 67, 54, 0.36), transparent 30%),
+    radial-gradient(circle at 82% 18%, rgba(229, 115, 115, 0.3), transparent 26%),
+    linear-gradient(135deg, rgba(254, 237, 237, 0.98), rgba(213, 165, 165, 0.99));
 }
 
 @keyframes caixa-onda-ativa {
@@ -133,11 +133,22 @@
 }
 
 /* Elementos da barra */
+#pausa-ia-botao-robo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(18, 140, 126, 0.18);
+  border-radius: 999px;
+  padding: 3px 6px 3px 4px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+  cursor: pointer;
+}
+
 #pausa-ia-icon {
   font-size: 15px;
   line-height: 1;
-  pointer-events: auto;
-  cursor: pointer;
+  pointer-events: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -237,16 +248,11 @@
   color: var(--pausa-ia-text);
   letter-spacing: 0.02em;
   pointer-events: none;
-  background: rgba(255, 255, 255, 0.98);
-  border: 1px solid rgba(18, 140, 126, 0.18);
-  border-radius: 999px;
-  padding: 4px 5px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
 }
 
 #pausa-ia-numero {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
   color: rgba(17, 27, 33, 0.94);
   font-family: 'Courier New', monospace;
   min-width: 78px;

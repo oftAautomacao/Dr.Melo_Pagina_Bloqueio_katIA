@@ -373,8 +373,10 @@ function criarWidget() {
   widget.innerHTML = `
     <div id="pausa-ia-toast"></div>
     <div id="pausa-ia-card" title="Arraste para mover">
-      <span id="pausa-ia-icon" title="Clique para pausar ou reativar a IA">🤖</span>
-      <span id="pausa-ia-title">IA</span>
+      <button id="pausa-ia-botao-robo" type="button" title="Clique para pausar ou reativar a IA">
+        <span id="pausa-ia-icon">🤖</span>
+        <span id="pausa-ia-title">IA</span>
+      </button>
       <div class="pausa-ia-divider"></div>
       <span id="pausa-ia-numero" title="Clique para inserir manualmente">—</span>
       <input type="text" id="pausa-ia-input-manual" placeholder="Cole o telefone" maxlength="20" />
@@ -389,7 +391,7 @@ function criarWidget() {
   `;
 
   document.body.appendChild(widget);
-  document.getElementById('pausa-ia-icon').addEventListener('click', async (e) => {
+  document.getElementById('pausa-ia-botao-robo').addEventListener('click', async (e) => {
     e.stopPropagation();
     await aoClicarRobo();
   });
@@ -528,7 +530,7 @@ function criarWidget() {
   card.addEventListener('mousedown', (e) => {
     // Ignora o clique se for nos botões ou checkbox (para não conflitar com a ação deles)
     if (
-      e.target.closest('#pausa-ia-icon') ||
+      e.target.closest('#pausa-ia-botao-robo') ||
       e.target.closest('#btn-recarregar') ||
       e.target.closest('#btn-bloqueados') ||
       e.target.closest('#pausa-ia-input-manual') ||
