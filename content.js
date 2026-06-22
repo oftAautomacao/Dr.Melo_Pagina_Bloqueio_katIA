@@ -29,6 +29,7 @@ let estadoAtual = {
   chaveFirebase   : null,   // chave do item no Firebase (para deletar)
   carregando      : false,
   numeroManual    : null,   // Guarda o número inserido manualmente
+  statusSincronizado: false,
 };
 
 estadoAtual.entradaManualAtiva = false;
@@ -37,6 +38,7 @@ let observerDOM = null;
 let timerDebounce = null;
 let painelBloqueadosEl = null;
 let recarregarListaBloqueados = async () => {};
+let intervaloLeituraAutomatica = null;
 
 // ──────────────────────────────────────────────
 // Utilitários Firebase (REST API)
@@ -381,7 +383,6 @@ function criarWidget() {
       <span id="pausa-ia-numero" title="Clique para inserir manualmente">—</span>
       <input type="text" id="pausa-ia-input-manual" placeholder="Cole o telefone" maxlength="20" />
       <div class="pausa-ia-divider"></div>
-      <button id="btn-recarregar" title="Forçar recarregamento">↻</button>
       <button id="btn-bloqueados" title="Mostrar bloqueados">▾</button>
     </div>
     <div id="pausa-ia-bloqueados" hidden>
@@ -394,19 +395,6 @@ function criarWidget() {
   document.getElementById('pausa-ia-botao-robo').addEventListener('click', async (e) => {
     e.stopPropagation();
     await aoClicarRobo();
-  });
-
-  // Evento Recarregar
-  document.getElementById('btn-recarregar').addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const icon = e.target;
-    icon.classList.add('spin-anim');
-    setTimeout(() => icon.classList.remove('spin-anim'), 500);
-    
-    // Força re-verificação limpando o estado atual
-    estadoAtual.numeroFormatado = null; 
-    await aoMudarConversa();
-    mostrarToast('Página lida novamente!');
   });
 
   const painelBloqueados = document.getElementById('pausa-ia-bloqueados');
@@ -531,7 +519,6 @@ function criarWidget() {
     // Ignora o clique se for nos botões ou checkbox (para não conflitar com a ação deles)
     if (
       e.target.closest('#pausa-ia-botao-robo') ||
-      e.target.closest('#btn-recarregar') ||
       e.target.closest('#btn-bloqueados') ||
       e.target.closest('#pausa-ia-input-manual') ||
       e.target.closest('#pausa-ia-bloqueados')
@@ -615,6 +602,38 @@ function mostrarToast(mensagem, duracao = 2500) {
   setTimeout(() => toast.classList.remove('visivel'), duracao);
 }
 
+function agendarLeituraContato(atraso = 0) {
+  clearTimeout(timerDebounce);
+  timerDebounce = setTimeout(() => {
+    void aoMudarConversa();
+  }, atraso);
+}
+
+function precisaSincronizarContato() {
+  if (estadoAtual.carregando) return false;
+
+  const contato = detectarContato();
+  const nomeVisivel = detectarNomeContato();
+
+  if (contato && contato.numeroFormatado) {
+    return (
+      contato.numeroFormatado !== estadoAtual.numeroFormatado ||
+      !estadoAtual.statusSincronizado
+    );
+  }
+
+  if (estadoAtual.numeroManual) return false;
+
+  if (nomeVisivel) {
+    return (
+      nomeVisivel !== estadoAtual.nomeContato ||
+      !estadoAtual.statusSincronizado
+    );
+  }
+
+  return Boolean(estadoAtual.numeroFormatado);
+}
+
 function animarRobo(tipo) {
   const robo = document.getElementById('pausa-ia-icon');
   const titulo = document.getElementById('pausa-ia-title');
@@ -654,6 +673,7 @@ async function pausarNumeroManual(numero, nomeContato) {
 
     estadoAtual.chaveFirebase = numero;
     estadoAtual.iaPausada = true;
+    estadoAtual.statusSincronizado = true;
     animarRobo('pausada');
     if (painelBloqueadosEl && !painelBloqueadosEl.hasAttribute('hidden')) {
       await recarregarListaBloqueados();
@@ -663,6 +683,7 @@ async function pausarNumeroManual(numero, nomeContato) {
     console.error('[Pausa IA] Erro ao salvar nÃºmero manual:', erro);
     estadoAtual.iaPausada = false;
     estadoAtual.chaveFirebase = null;
+    estadoAtual.statusSincronizado = false;
     mostrarToast('❌ Erro ao salvar no Firebase');
   } finally {
     estadoAtual.carregando = false;
@@ -694,6 +715,7 @@ async function aoClicarRobo() {
       );
       estadoAtual.chaveFirebase = chave;
       estadoAtual.iaPausada = true;
+      estadoAtual.statusSincronizado = true;
       animarRobo('pausada');
       if (painelBloqueadosEl && !painelBloqueadosEl.hasAttribute('hidden')) {
         await recarregarListaBloqueados();
@@ -711,6 +733,7 @@ async function aoClicarRobo() {
         estadoAtual.chaveFirebase = null;
       }
       estadoAtual.iaPausada = false;
+      estadoAtual.statusSincronizado = true;
       animarRobo('ativa');
       if (painelBloqueadosEl && !painelBloqueadosEl.hasAttribute('hidden')) {
         await recarregarListaBloqueados();
@@ -719,6 +742,7 @@ async function aoClicarRobo() {
     }
   } catch (erro) {
     console.error('[Pausa IA] Erro ao comunicar com Firebase:', erro);
+    estadoAtual.statusSincronizado = false;
     mostrarToast('❌ Erro ao conectar com Firebase');
   } finally {
     estadoAtual.carregando = false;
@@ -737,10 +761,12 @@ async function verificarStatusNoFirebase(numero) {
     const chave = await fbBuscarChavePorTelefone(numero);
     estadoAtual.iaPausada     = chave !== null;
     estadoAtual.chaveFirebase = chave;
+    estadoAtual.statusSincronizado = true;
   } catch (erro) {
     console.error('[Pausa IA] Erro ao verificar Firebase:', erro);
     estadoAtual.iaPausada     = false;
     estadoAtual.chaveFirebase = null;
+    estadoAtual.statusSincronizado = false;
   } finally {
     estadoAtual.carregando = false;
     atualizarWidget();
@@ -762,7 +788,11 @@ async function aoMudarConversa() {
   }
 
   // Se mesmo número, não faz nada
-  if (contato && contato.numeroFormatado === estadoAtual.numeroFormatado) return;
+  if (
+    contato &&
+    contato.numeroFormatado === estadoAtual.numeroFormatado &&
+    estadoAtual.statusSincronizado
+  ) return;
 
   if (!contato) {
     if (estadoAtual.numeroManual) return; // Não apaga se estiver usando modo manual
@@ -777,11 +807,13 @@ async function aoMudarConversa() {
           estadoAtual.iaPausada       = true;
           estadoAtual.chaveFirebase   = vinculo.telefone;
           estadoAtual.entradaManualAtiva = true;
+          estadoAtual.statusSincronizado = true;
           atualizarWidget();
           return;
         }
       } catch (erro) {
         console.error('[Pausa IA] Erro ao buscar vínculo por nome:', erro);
+        estadoAtual.statusSincronizado = false;
       }
     }
 
@@ -791,6 +823,7 @@ async function aoMudarConversa() {
     estadoAtual.iaPausada       = false;
     estadoAtual.chaveFirebase   = null;
     estadoAtual.entradaManualAtiva = false;
+    estadoAtual.statusSincronizado = true;
     atualizarWidget();
     return;
   }
@@ -802,6 +835,7 @@ async function aoMudarConversa() {
   estadoAtual.iaPausada       = false;
   estadoAtual.chaveFirebase   = null;
   estadoAtual.entradaManualAtiva = false;
+  estadoAtual.statusSincronizado = false;
 
   await verificarStatusNoFirebase(contato.numeroFormatado);
 }
@@ -815,8 +849,7 @@ function iniciarObservador() {
 
   observerDOM = new MutationObserver(() => {
     // Debounce: espera 600ms de estabilidade antes de re-verificar
-    clearTimeout(timerDebounce);
-    timerDebounce = setTimeout(aoMudarConversa, 600);
+    agendarLeituraContato(600);
   });
 
   // Observa o elemento principal do WhatsApp Web
@@ -836,10 +869,22 @@ setInterval(() => {
     urlAnterior = window.location.href;
     estadoAtual.numeroManual = null; // reseta o manual ao trocar de aba via URL
     estadoAtual.entradaManualAtiva = false;
-    clearTimeout(timerDebounce);
-    timerDebounce = setTimeout(aoMudarConversa, 400);
+    estadoAtual.statusSincronizado = false;
+    agendarLeituraContato(400);
   }
 }, 500);
+
+function iniciarLeituraAutomatica() {
+  if (intervaloLeituraAutomatica) {
+    clearInterval(intervaloLeituraAutomatica);
+  }
+
+  intervaloLeituraAutomatica = setInterval(() => {
+    if (precisaSincronizarContato()) {
+      agendarLeituraContato(120);
+    }
+  }, 1200);
+}
 
 // ──────────────────────────────────────────────
 // Inicialização
@@ -848,8 +893,9 @@ setInterval(() => {
 function inicializar() {
   criarWidget();
   iniciarObservador();
+  iniciarLeituraAutomatica();
   // Primeira verificação após 1.5s (dá tempo do WhatsApp carregar)
-  setTimeout(aoMudarConversa, 1500);
+  agendarLeituraContato(1500);
 }
 
 // Aguarda o WhatsApp Web estar completamente carregado

@@ -353,8 +353,7 @@
   margin: 0 -1px;
 }
 
-/* Botão Recarregar */
-#btn-recarregar,
+/* Botão de bloqueados */
 #btn-bloqueados {
   width: 26px;
   height: 26px;
@@ -376,7 +375,6 @@
     0 3px 8px rgba(11,20,26,0.08);
 }
 
-#btn-recarregar:hover,
 #btn-bloqueados:hover {
   background: linear-gradient(180deg, rgba(242, 251, 247, 0.99), rgba(205, 235, 223, 0.98));
   border-color: rgba(18,140,126,0.32);
@@ -386,15 +384,6 @@
 
 #btn-bloqueados {
   font-size: 13px;
-}
-
-/* Animação Recarregar */
-@keyframes spin-once {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-.spin-anim {
-  animation: spin-once 0.5s ease;
 }
 
 /* ---------- Toggle button ---------- */
