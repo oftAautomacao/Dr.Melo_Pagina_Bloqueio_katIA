@@ -576,6 +576,7 @@ function criarWidget() {
 function atualizarWidget() {
   const widget   = document.getElementById('pausa-ia-widget');
   const elNumero = document.getElementById('pausa-ia-numero');
+  const elTitulo = document.getElementById('pausa-ia-title');
   if (!widget) return;
 
   // Remove todas as classes de estado
@@ -584,12 +585,14 @@ function atualizarWidget() {
   if (estadoAtual.carregando) {
     widget.classList.add('carregando');
     elNumero.textContent = 'Buscando...';
+    if (elTitulo) elTitulo.textContent = 'LENDO';
     return;
   }
 
   if (!estadoAtual.numeroFormatado) {
     widget.classList.add('sem-contato');
     elNumero.textContent = 'Sem contato';
+    if (elTitulo) elTitulo.textContent = 'IA';
     return;
   }
 
@@ -597,8 +600,10 @@ function atualizarWidget() {
 
   if (estadoAtual.iaPausada) {
     widget.classList.add('ia-pausada');
+    if (elTitulo) elTitulo.textContent = 'PAUSADA';
   } else {
     widget.classList.add('ia-ativa');
+    if (elTitulo) elTitulo.textContent = 'ATIVADA';
   }
 }
 
@@ -612,21 +617,25 @@ function mostrarToast(mensagem, duracao = 2500) {
 
 function animarRobo(tipo) {
   const robo = document.getElementById('pausa-ia-icon');
+  const titulo = document.getElementById('pausa-ia-title');
   const widget = document.getElementById('pausa-ia-widget');
   if (!robo || !widget) return;
 
   const classe = tipo === 'pausada' ? 'animar-pausada' : 'animar-ativa';
   const classeWidget = tipo === 'pausada' ? 'flash-pausada' : 'flash-ativa';
   robo.classList.remove('animar-ativa', 'animar-pausada');
+  titulo?.classList.remove('animar-ativa', 'animar-pausada');
   widget.classList.remove('flash-ativa', 'flash-pausada');
 
   // Reinicia a animação mesmo em cliques consecutivos.
   void robo.offsetWidth;
   robo.classList.add(classe);
+  titulo?.classList.add(classe);
   widget.classList.add(classeWidget);
 
   setTimeout(() => {
     robo.classList.remove(classe);
+    titulo?.classList.remove(classe);
     widget.classList.remove(classeWidget);
   }, 900);
 }
