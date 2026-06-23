@@ -17,6 +17,15 @@
 
 // (Configurações agora vêm do firebase-config.js, injetado antes pelo manifest)
 // FIREBASE_DB_URL e FIREBASE_PATH são definidos lá.
+const FIREBASE_CONSULTAS_PATH = "/DRM/agendamentoWhatsApp/operacional/consultasAgendadas/unidades";
+const STORAGE_MOTIVOS_NAO_AGENDAMENTO = 'pausa_ia_motivos_nao_agendamento';
+const MOTIVOS_NAO_AGENDAMENTO_PADRAO = [
+  'Paciente desistiu',
+  'Sem horario disponivel',
+  'Convenio nao atendido',
+  'Nao respondeu',
+  'Solicitou retorno posterior',
+];
 
 // ──────────────────────────────────────────────
 // Estado global do widget
@@ -39,6 +48,7 @@ let timerDebounce = null;
 let painelBloqueadosEl = null;
 let recarregarListaBloqueados = async () => {};
 let intervaloLeituraAutomatica = null;
+let motivoSelecionado = '';
 
 // ──────────────────────────────────────────────
 // Utilitários Firebase (REST API)
@@ -54,6 +64,16 @@ async function fbConsultarCancelado(numero) {
 async function fbListarCancelados() {
   const resp = await fetch(`${FIREBASE_DB_URL}${FIREBASE_PATH}.json`);
   if (!resp.ok) throw new Error(`Firebase GET lista falhou: ${resp.status}`);
+  return await resp.json();
+}
+
+async function fbSalvarMotivoNaoAgendamento(telefone, motivoNaoAgendamento) {
+  const resp = await fetch(`${FIREBASE_DB_URL}${FIREBASE_CONSULTAS_PATH}/${telefone}.json`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ motivoNaoAgendamento }),
+  });
+  if (!resp.ok) throw new Error(`Firebase PATCH motivo falhou: ${resp.status}`);
   return await resp.json();
 }
 
@@ -86,6 +106,47 @@ async function fbBuscarChavePorTelefone(numero) {
   const dados = await fbConsultarCancelado(numero);
   if (dados) return numero; // Se retornou dados, a chave (o próprio número) existe
   return null;
+}
+
+function lerStorageLocal(chave) {
+  return new Promise((resolve) => {
+    if (chrome?.storage?.local) {
+      chrome.storage.local.get([chave], (resultado) => {
+        resolve(resultado?.[chave]);
+      });
+      return;
+    }
+
+    try {
+      const valor = localStorage.getItem(chave);
+      resolve(valor ? JSON.parse(valor) : null);
+    } catch (erro) {
+      console.error('[Pausa IA] Erro ao ler storage local:', erro);
+      resolve(null);
+    }
+  });
+}
+
+function salvarStorageLocal(chave, valor) {
+  return new Promise((resolve, reject) => {
+    if (chrome?.storage?.local) {
+      chrome.storage.local.set({ [chave]: valor }, () => {
+        if (chrome.runtime?.lastError) {
+          reject(chrome.runtime.lastError);
+          return;
+        }
+        resolve();
+      });
+      return;
+    }
+
+    try {
+      localStorage.setItem(chave, JSON.stringify(valor));
+      resolve();
+    } catch (erro) {
+      reject(erro);
+    }
+  });
 }
 
 // ──────────────────────────────────────────────
@@ -156,6 +217,61 @@ function normalizarNome(nome) {
     .replace(/\s+/g, '')
     .trim()
     .toLowerCase();
+}
+
+function normalizarTextoLista(valor) {
+  return String(valor || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function chaveTextoLista(valor) {
+  return normalizarTextoLista(valor).toLowerCase();
+}
+
+async function carregarMotivosNaoAgendamento() {
+  const salvos = await lerStorageLocal(STORAGE_MOTIVOS_NAO_AGENDAMENTO);
+  const origem = Array.isArray(salvos)
+    ? salvos
+    : MOTIVOS_NAO_AGENDAMENTO_PADRAO;
+
+  const vistos = new Set();
+  const motivos = [];
+  for (const item of origem) {
+    const texto = normalizarTextoLista(item);
+    if (!texto) continue;
+
+    const chave = chaveTextoLista(texto);
+    if (vistos.has(chave)) continue;
+
+    vistos.add(chave);
+    motivos.push(texto);
+  }
+
+  if (!Array.isArray(salvos) || salvos.length !== motivos.length) {
+    await salvarStorageLocal(STORAGE_MOTIVOS_NAO_AGENDAMENTO, motivos);
+  }
+
+  return motivos;
+}
+
+async function salvarMotivosNaoAgendamento(motivos) {
+  const vistos = new Set();
+  const limpos = [];
+
+  for (const item of motivos) {
+    const texto = normalizarTextoLista(item);
+    if (!texto) continue;
+
+    const chave = chaveTextoLista(texto);
+    if (vistos.has(chave)) continue;
+
+    vistos.add(chave);
+    limpos.push(texto);
+  }
+
+  await salvarStorageLocal(STORAGE_MOTIVOS_NAO_AGENDAMENTO, limpos);
+  return limpos;
 }
 
 function ehTextoStatusContato(texto) {
@@ -375,32 +491,91 @@ function criarWidget() {
   widget.innerHTML = `
     <div id="pausa-ia-toast"></div>
     <div id="pausa-ia-card" title="Arraste para mover">
-      <button id="pausa-ia-botao-robo" type="button" title="Clique para pausar ou reativar a IA">
+      <button id="pausa-ia-switch" type="button" title="Clique para pausar ou reativar a IA" aria-pressed="false">
         <span id="pausa-ia-icon">🤖</span>
         <span id="pausa-ia-title">IA</span>
+        <span id="pausa-ia-slider"></span>
+        <span id="pausa-ia-status-flash" aria-live="polite"></span>
       </button>
       <div class="pausa-ia-divider"></div>
       <span id="pausa-ia-numero" title="Clique para inserir manualmente">—</span>
       <input type="text" id="pausa-ia-input-manual" placeholder="Cole o telefone" maxlength="20" />
       <div class="pausa-ia-divider"></div>
-      <button id="btn-bloqueados" title="Mostrar bloqueados">▾</button>
+      <button id="btn-bloqueados" title="Abrir painel">▾</button>
     </div>
-    <div id="pausa-ia-bloqueados" hidden>
-      <div class="pausa-ia-bloqueados-header">Bloqueados atuais</div>
-      <div id="pausa-ia-bloqueados-lista"></div>
+    <div id="pausa-ia-painel" hidden>
+      <div class="pausa-ia-painel-header">Acoes rapidas</div>
+      <div class="pausa-ia-painel-body">
+        <button type="button" class="pausa-ia-painel-opcao" data-secao="bloqueados" aria-expanded="false">
+          <span>Cancelados</span>
+          <span class="pausa-ia-painel-seta">▾</span>
+        </button>
+        <div class="pausa-ia-painel-secao" id="pausa-ia-secao-bloqueados" hidden>
+          <div id="pausa-ia-bloqueados-lista"></div>
+        </div>
+        <button type="button" class="pausa-ia-painel-opcao" data-secao="nao-agendado" aria-expanded="false">
+          <span>Paciente nao agendado</span>
+          <span class="pausa-ia-painel-seta">▾</span>
+        </button>
+        <div class="pausa-ia-painel-secao" id="pausa-ia-secao-nao-agendado" hidden>
+          <div id="pausa-ia-nao-agendado-status" class="pausa-ia-bloqueados-info">Nenhum contato detectado no momento.</div>
+          <div class="pausa-ia-motivo-picker">
+            <button type="button" id="btn-motivo-select" aria-expanded="false">
+              <span id="pausa-ia-motivo-select-texto">Selecione um motivo</span>
+              <span class="pausa-ia-painel-seta">▾</span>
+            </button>
+            <div id="pausa-ia-motivo-dropdown" hidden>
+              <div class="pausa-ia-motivo-dropdown-layout">
+                <div id="pausa-ia-motivo-opcoes"></div>
+                <div class="pausa-ia-motivo-dropdown-acoes">
+                  <button type="button" id="btn-editar-motivos" class="pausa-ia-motivo-dropdown-editar" title="Editar motivos" aria-expanded="false">
+                    <span class="pausa-ia-editor-icone">&#9998;</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button type="button" id="btn-salvar-nao-agendado">Salvar motivo</button>
+          <div id="pausa-ia-editor-motivos" hidden>
+            <div id="pausa-ia-motivos-lista"></div>
+            <div class="pausa-ia-motivos-novo">
+              <input type="text" id="pausa-ia-motivo-novo" placeholder="Novo motivo" maxlength="80" />
+              <button type="button" id="btn-adicionar-motivo" title="Adicionar motivo">+</button>
+              <button type="button" id="btn-salvar-motivos" title="Salvar motivos">Salvar</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   `;
 
   document.body.appendChild(widget);
-  document.getElementById('pausa-ia-botao-robo').addEventListener('click', async (e) => {
+  document.getElementById('pausa-ia-switch').addEventListener('click', async (e) => {
     e.stopPropagation();
-    await aoClicarRobo();
+    await aoClicarToggle();
   });
 
-  const painelBloqueados = document.getElementById('pausa-ia-bloqueados');
+  const painelBloqueados = document.getElementById('pausa-ia-painel');
   const listaBloqueados = document.getElementById('pausa-ia-bloqueados-lista');
   const btnBloqueados = document.getElementById('btn-bloqueados');
+  const botoesPainel = Array.from(document.querySelectorAll('.pausa-ia-painel-opcao'));
+  const secaoBloqueados = document.getElementById('pausa-ia-secao-bloqueados');
+  const secaoNaoAgendado = document.getElementById('pausa-ia-secao-nao-agendado');
+  const btnMotivoSelect = document.getElementById('btn-motivo-select');
+  const textoMotivoSelect = document.getElementById('pausa-ia-motivo-select-texto');
+  const dropdownMotivo = document.getElementById('pausa-ia-motivo-dropdown');
+  const opcoesMotivo = document.getElementById('pausa-ia-motivo-opcoes');
+  const btnSalvarNaoAgendado = document.getElementById('btn-salvar-nao-agendado');
+  const listaMotivos = document.getElementById('pausa-ia-motivos-lista');
+  const inputMotivoNovo = document.getElementById('pausa-ia-motivo-novo');
+  const btnAdicionarMotivo = document.getElementById('btn-adicionar-motivo');
+  const btnSalvarMotivos = document.getElementById('btn-salvar-motivos');
+  const btnEditarMotivos = document.getElementById('btn-editar-motivos');
+  const editorMotivos = document.getElementById('pausa-ia-editor-motivos');
+  const statusNaoAgendado = document.getElementById('pausa-ia-nao-agendado-status');
   painelBloqueadosEl = painelBloqueados;
+  let motivosNaoAgendamento = [];
+  let motivosNaoAgendamentoEdicao = [];
 
   async function carregarBloqueados() {
     listaBloqueados.innerHTML = '<div class="pausa-ia-bloqueados-info">Carregando...</div>';
@@ -438,6 +613,136 @@ function criarWidget() {
 
   recarregarListaBloqueados = carregarBloqueados;
 
+  function atualizarStatusNaoAgendado() {
+    const telefoneAtual = estadoAtual.numeroExibido || estadoAtual.numeroFormatado;
+    const podeSalvar = Boolean(estadoAtual.numeroFormatado && motivoSelecionado);
+
+    statusNaoAgendado.textContent = telefoneAtual
+      ? `Contato atual: ${telefoneAtual}`
+      : 'Nenhum contato detectado no momento.';
+
+    btnSalvarNaoAgendado.disabled = !podeSalvar;
+  }
+
+  function escaparHtml(valor) {
+    return String(valor)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  async function renderizarMotivosNaoAgendamento() {
+    motivosNaoAgendamento = await carregarMotivosNaoAgendamento();
+    if (motivoSelecionado && !motivosNaoAgendamento.some((motivo) => chaveTextoLista(motivo) === chaveTextoLista(motivoSelecionado))) {
+      motivoSelecionado = '';
+    }
+
+    textoMotivoSelect.textContent = motivoSelecionado || 'Selecione um motivo';
+
+    opcoesMotivo.innerHTML = motivosNaoAgendamento.length
+      ? motivosNaoAgendamento
+          .map((motivo) => {
+            const valor = escaparHtml(motivo);
+            const ativo = chaveTextoLista(motivo) === chaveTextoLista(motivoSelecionado);
+            return `<button type="button" class="pausa-ia-motivo-opcao${ativo ? ' ativa' : ''}" data-motivo="${valor}">${valor}</button>`;
+          })
+          .join('')
+      : '<div class="pausa-ia-bloqueados-info">Nenhum motivo cadastrado.</div>';
+
+    if (!editorMotivos.hasAttribute('hidden')) {
+      renderizarListaEditorMotivos();
+    }
+
+    atualizarStatusNaoAgendado();
+  }
+
+  function renderizarListaEditorMotivos() {
+    listaMotivos.innerHTML = motivosNaoAgendamentoEdicao.length
+      ? motivosNaoAgendamentoEdicao
+          .map((motivo) => {
+            const valor = escaparHtml(motivo);
+            return `
+              <div class="pausa-ia-motivo-item">
+                <span class="pausa-ia-motivo-texto">${valor}</span>
+                <button type="button" class="pausa-ia-motivo-remover" data-motivo="${valor}" title="Remover motivo">×</button>
+              </div>
+            `;
+          })
+          .join('')
+      : '<div class="pausa-ia-bloqueados-info">Nenhum motivo cadastrado.</div>';
+  }
+
+  function atualizarEditorMotivos(aberto) {
+    if (aberto) {
+      motivosNaoAgendamentoEdicao = [...motivosNaoAgendamento];
+      renderizarListaEditorMotivos();
+      editorMotivos.removeAttribute('hidden');
+      btnEditarMotivos.setAttribute('aria-expanded', 'true');
+      btnEditarMotivos.classList.add('ativo');
+      return;
+    }
+
+    editorMotivos.setAttribute('hidden', '');
+    btnEditarMotivos.setAttribute('aria-expanded', 'false');
+    btnEditarMotivos.classList.remove('ativo');
+  }
+
+  function atualizarDropdownMotivos(aberto) {
+    if (aberto) {
+      dropdownMotivo.removeAttribute('hidden');
+      btnMotivoSelect.setAttribute('aria-expanded', 'true');
+      return;
+    }
+
+    dropdownMotivo.setAttribute('hidden', '');
+    btnMotivoSelect.setAttribute('aria-expanded', 'false');
+  }
+
+  function fecharSecoesPainel() {
+    secaoBloqueados.setAttribute('hidden', '');
+    secaoNaoAgendado.setAttribute('hidden', '');
+    atualizarEditorMotivos(false);
+    atualizarDropdownMotivos(false);
+
+    for (const botao of botoesPainel) {
+      botao.classList.remove('ativa');
+      botao.setAttribute('aria-expanded', 'false');
+      const seta = botao.querySelector('.pausa-ia-painel-seta');
+      if (seta) seta.textContent = '▾';
+    }
+  }
+
+  async function alternarSecaoPainel(nomeSecao) {
+    const botao = botoesPainel.find((item) => item.dataset.secao === nomeSecao);
+    const secao = nomeSecao === 'bloqueados' ? secaoBloqueados : secaoNaoAgendado;
+    if (!botao || !secao) return;
+
+    const estavaAberta = !secao.hasAttribute('hidden');
+    fecharSecoesPainel();
+
+    if (estavaAberta) return;
+
+    secao.removeAttribute('hidden');
+    botao.classList.add('ativa');
+    botao.setAttribute('aria-expanded', 'true');
+    const seta = botao.querySelector('.pausa-ia-painel-seta');
+    if (seta) seta.textContent = '▴';
+
+    if (nomeSecao === 'bloqueados') {
+      await carregarBloqueados();
+      return;
+    }
+
+    atualizarDropdownMotivos(false);
+    try {
+      await renderizarMotivosNaoAgendamento();
+    } catch (erro) {
+      console.error('[Pausa IA] Erro ao abrir motivos de nao agendamento:', erro);
+      mostrarToast('Erro ao carregar motivos');
+    }
+  }
+
   listaBloqueados.addEventListener('click', async (e) => {
     const item = e.target.closest('.pausa-ia-bloqueado-item[data-telefone]');
     if (!item) return;
@@ -459,17 +764,136 @@ function criarWidget() {
     const abrir = painelBloqueados.hasAttribute('hidden');
     if (abrir) {
       painelBloqueados.removeAttribute('hidden');
-      widget.classList.add('lista-bloqueados-aberta');
       btnBloqueados.textContent = '▴';
-      await carregarBloqueados();
+      atualizarStatusNaoAgendado();
     } else {
       painelBloqueados.setAttribute('hidden', '');
-      widget.classList.remove('lista-bloqueados-aberta');
       btnBloqueados.textContent = '▾';
+      fecharSecoesPainel();
     }
   });
 
-  // Lógica de Entrada Manual
+  // Painel de acoes e entrada manual
+  for (const botao of botoesPainel) {
+    botao.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await alternarSecaoPainel(botao.dataset.secao);
+    });
+  }
+
+  btnSalvarNaoAgendado.addEventListener('click', async (e) => {
+    e.stopPropagation();
+
+    const motivo = normalizarTextoLista(motivoSelecionado);
+    if (!motivo) {
+      mostrarToast('Selecione um motivo');
+      return;
+    }
+
+    if (!estadoAtual.numeroFormatado) {
+      mostrarToast('Nenhum contato detectado');
+      return;
+    }
+
+    try {
+      await fbSalvarMotivoNaoAgendamento(estadoAtual.numeroFormatado, motivo);
+      mostrarToast(`Motivo salvo para ${estadoAtual.numeroFormatado}`);
+    } catch (erro) {
+      console.error('[Pausa IA] Erro ao salvar motivo de nao agendamento:', erro);
+      mostrarToast('Erro ao salvar motivo');
+    }
+  });
+
+  btnMotivoSelect.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const abrir = dropdownMotivo.hasAttribute('hidden');
+    if (abrir) {
+      await renderizarMotivosNaoAgendamento();
+    }
+    atualizarDropdownMotivos(abrir);
+  });
+
+  opcoesMotivo.addEventListener('click', (e) => {
+    const botao = e.target.closest('.pausa-ia-motivo-opcao[data-motivo]');
+    if (!botao) return;
+
+    motivoSelecionado = normalizarTextoLista(botao.getAttribute('data-motivo'));
+    textoMotivoSelect.textContent = motivoSelecionado || 'Selecione um motivo';
+    atualizarDropdownMotivos(false);
+    void renderizarMotivosNaoAgendamento();
+  });
+
+  btnEditarMotivos.addEventListener('click', (e) => {
+    e.stopPropagation();
+    atualizarDropdownMotivos(false);
+    const abrir = editorMotivos.hasAttribute('hidden');
+    atualizarEditorMotivos(abrir);
+  });
+
+  btnAdicionarMotivo.addEventListener('click', async (e) => {
+    e.stopPropagation();
+
+    try {
+      const novoMotivo = normalizarTextoLista(inputMotivoNovo.value);
+      if (!novoMotivo) return;
+
+      const existe = motivosNaoAgendamentoEdicao.some((item) => chaveTextoLista(item) === chaveTextoLista(novoMotivo));
+      if (existe) {
+        mostrarToast('Esse motivo ja existe');
+        inputMotivoNovo.value = '';
+        return;
+      }
+
+      motivosNaoAgendamentoEdicao = [
+        ...motivosNaoAgendamentoEdicao,
+        novoMotivo,
+      ];
+      inputMotivoNovo.value = '';
+      renderizarListaEditorMotivos();
+    } catch (erro) {
+      console.error('[Pausa IA] Erro ao adicionar motivo:', erro);
+      mostrarToast('Erro ao adicionar motivo');
+    }
+  });
+
+  inputMotivoNovo.addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    btnAdicionarMotivo.click();
+  });
+
+  listaMotivos.addEventListener('click', async (e) => {
+    const botao = e.target.closest('.pausa-ia-motivo-remover[data-motivo]');
+    if (!botao) return;
+
+    const motivo = botao.getAttribute('data-motivo');
+    if (!motivo) return;
+
+    try {
+      motivosNaoAgendamentoEdicao = motivosNaoAgendamentoEdicao.filter(
+        (item) => chaveTextoLista(item) !== chaveTextoLista(motivo)
+      );
+      renderizarListaEditorMotivos();
+    } catch (erro) {
+      console.error('[Pausa IA] Erro ao remover motivo:', erro);
+      mostrarToast('Erro ao remover motivo');
+    }
+  });
+
+  btnSalvarMotivos.addEventListener('click', async (e) => {
+    e.stopPropagation();
+
+    try {
+      motivosNaoAgendamento = await salvarMotivosNaoAgendamento(motivosNaoAgendamentoEdicao);
+      await renderizarMotivosNaoAgendamento();
+      atualizarEditorMotivos(false);
+      mostrarToast('Lista de motivos salva');
+    } catch (erro) {
+      console.error('[Pausa IA] Erro ao salvar lista de motivos:', erro);
+      mostrarToast('Erro ao salvar lista');
+    }
+  });
+
   const elNumero = document.getElementById('pausa-ia-numero');
   const inputManual = document.getElementById('pausa-ia-input-manual');
 
@@ -518,10 +942,10 @@ function criarWidget() {
   card.addEventListener('mousedown', (e) => {
     // Ignora o clique se for nos botões ou checkbox (para não conflitar com a ação deles)
     if (
-      e.target.closest('#pausa-ia-botao-robo') ||
+      e.target.closest('#pausa-ia-switch') ||
       e.target.closest('#btn-bloqueados') ||
       e.target.closest('#pausa-ia-input-manual') ||
-      e.target.closest('#pausa-ia-bloqueados')
+      e.target.closest('#pausa-ia-painel')
     ) return; 
     
     isDragging = true;
@@ -564,7 +988,29 @@ function atualizarWidget() {
   const widget   = document.getElementById('pausa-ia-widget');
   const elNumero = document.getElementById('pausa-ia-numero');
   const elTitulo = document.getElementById('pausa-ia-title');
+  const elSwitch = document.getElementById('pausa-ia-switch');
+  const statusNaoAgendado = document.getElementById('pausa-ia-nao-agendado-status');
+  const btnMotivoSelect = document.getElementById('btn-motivo-select');
+  const btnSalvarNaoAgendado = document.getElementById('btn-salvar-nao-agendado');
   if (!widget) return;
+
+  const telefoneAtual = estadoAtual.numeroExibido || estadoAtual.numeroFormatado;
+  if (statusNaoAgendado) {
+    statusNaoAgendado.textContent = telefoneAtual
+      ? `Contato atual: ${telefoneAtual}`
+      : 'Nenhum contato detectado no momento.';
+  }
+  if (btnMotivoSelect) btnMotivoSelect.disabled = false;
+  if (btnSalvarNaoAgendado) btnSalvarNaoAgendado.disabled = !(estadoAtual.numeroFormatado && motivoSelecionado);
+  if (elSwitch) {
+    elSwitch.setAttribute('aria-pressed', estadoAtual.iaPausada ? 'true' : 'false');
+    elSwitch.setAttribute(
+      'title',
+      estadoAtual.iaPausada
+        ? 'Clique para ativar a IA'
+        : 'Clique para pausar a IA'
+    );
+  }
 
   // Remove todas as classes de estado
   widget.classList.remove('ia-ativa', 'ia-pausada', 'sem-contato', 'carregando');
@@ -572,7 +1018,7 @@ function atualizarWidget() {
   if (estadoAtual.carregando) {
     widget.classList.add('carregando');
     elNumero.textContent = 'Buscando...';
-    if (elTitulo) elTitulo.textContent = 'LENDO';
+    if (elTitulo) elTitulo.textContent = 'IA';
     return;
   }
 
@@ -587,10 +1033,10 @@ function atualizarWidget() {
 
   if (estadoAtual.iaPausada) {
     widget.classList.add('ia-pausada');
-    if (elTitulo) elTitulo.textContent = 'PAUSADA';
+    if (elTitulo) elTitulo.textContent = 'IA';
   } else {
     widget.classList.add('ia-ativa');
-    if (elTitulo) elTitulo.textContent = 'ATIVADA';
+    if (elTitulo) elTitulo.textContent = 'IA';
   }
 }
 
@@ -634,29 +1080,33 @@ function precisaSincronizarContato() {
   return Boolean(estadoAtual.numeroFormatado);
 }
 
-function animarRobo(tipo) {
-  const robo = document.getElementById('pausa-ia-icon');
-  const titulo = document.getElementById('pausa-ia-title');
+function animarControle(tipo) {
+  const controle = document.getElementById('pausa-ia-switch');
+  const status = document.getElementById('pausa-ia-status-flash');
   const widget = document.getElementById('pausa-ia-widget');
-  if (!robo || !widget) return;
+  if (!controle || !status || !widget) return;
 
   const classe = tipo === 'pausada' ? 'animar-pausada' : 'animar-ativa';
   const classeWidget = tipo === 'pausada' ? 'flash-pausada' : 'flash-ativa';
-  robo.classList.remove('animar-ativa', 'animar-pausada');
-  titulo?.classList.remove('animar-ativa', 'animar-pausada');
+  const texto = tipo === 'pausada' ? 'PAUSADA' : 'ATIVADA';
+  controle.classList.remove('animar-ativa', 'animar-pausada');
+  status.classList.remove('animar-ativa', 'animar-pausada');
   widget.classList.remove('flash-ativa', 'flash-pausada');
 
   // Reinicia a animação mesmo em cliques consecutivos.
-  void robo.offsetWidth;
-  robo.classList.add(classe);
-  titulo?.classList.add(classe);
+  void controle.offsetWidth;
+  void status.offsetWidth;
+  status.textContent = texto;
+  controle.classList.add(classe);
+  status.classList.add(classe);
   widget.classList.add(classeWidget);
 
   setTimeout(() => {
-    robo.classList.remove(classe);
-    titulo?.classList.remove(classe);
+    controle.classList.remove(classe);
+    status.classList.remove(classe);
     widget.classList.remove(classeWidget);
-  }, 900);
+    status.textContent = '';
+  }, 1000);
 }
 
 // ──────────────────────────────────────────────
@@ -674,7 +1124,7 @@ async function pausarNumeroManual(numero, nomeContato) {
     estadoAtual.chaveFirebase = numero;
     estadoAtual.iaPausada = true;
     estadoAtual.statusSincronizado = true;
-    animarRobo('pausada');
+    animarControle('pausada');
     if (painelBloqueadosEl && !painelBloqueadosEl.hasAttribute('hidden')) {
       await recarregarListaBloqueados();
     }
@@ -691,7 +1141,7 @@ async function pausarNumeroManual(numero, nomeContato) {
   }
 }
 
-async function aoClicarRobo() {
+async function aoClicarToggle() {
   // Impede ação se não houver contato detectado
   if (!estadoAtual.numeroFormatado) {
     mostrarToast('⚠️ Nenhum contato detectado');
@@ -716,7 +1166,7 @@ async function aoClicarRobo() {
       estadoAtual.chaveFirebase = chave;
       estadoAtual.iaPausada = true;
       estadoAtual.statusSincronizado = true;
-      animarRobo('pausada');
+      animarControle('pausada');
       if (painelBloqueadosEl && !painelBloqueadosEl.hasAttribute('hidden')) {
         await recarregarListaBloqueados();
       }
@@ -734,7 +1184,7 @@ async function aoClicarRobo() {
       }
       estadoAtual.iaPausada = false;
       estadoAtual.statusSincronizado = true;
-      animarRobo('ativa');
+      animarControle('ativa');
       if (painelBloqueadosEl && !painelBloqueadosEl.hasAttribute('hidden')) {
         await recarregarListaBloqueados();
       }
@@ -944,7 +1394,7 @@ chrome.runtime.onMessage.addListener((mensagem, _sender, sendResponse) => {
           );
           estadoAtual.chaveFirebase = chave;
           estadoAtual.iaPausada     = true;
-          animarRobo('pausada');
+          animarControle('pausada');
           if (painelBloqueadosEl && !painelBloqueadosEl.hasAttribute('hidden')) {
             await recarregarListaBloqueados();
           }
@@ -975,7 +1425,7 @@ chrome.runtime.onMessage.addListener((mensagem, _sender, sendResponse) => {
           }
           estadoAtual.chaveFirebase = null;
           estadoAtual.iaPausada     = false;
-          animarRobo('ativa');
+          animarControle('ativa');
           if (painelBloqueadosEl && !painelBloqueadosEl.hasAttribute('hidden')) {
             await recarregarListaBloqueados();
           }
