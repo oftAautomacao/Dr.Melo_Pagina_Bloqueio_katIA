@@ -17,7 +17,7 @@
 
 // (Configurações agora vêm do firebase-config.js, injetado antes pelo manifest)
 // FIREBASE_DB_URL e FIREBASE_PATH são definidos lá.
-const FIREBASE_CONSULTAS_PATH = "/DRM/agendamentoWhatsApp/operacional/consultasAgendadas/unidades";
+const FIREBASE_CONVERSAS_PATH = "/DRM/agendamentoWhatsApp/operacional/conversas";
 const STORAGE_MOTIVOS_NAO_AGENDAMENTO = 'pausa_ia_motivos_nao_agendamento';
 const MOTIVOS_NAO_AGENDAMENTO_PADRAO = [
   'Paciente desistiu',
@@ -36,6 +36,7 @@ let estadoAtual = {
   numeroExibido   : null,   // ex: "+55 21 97716-4257"
   iaPausada       : false,
   chaveFirebase   : null,   // chave do item no Firebase (para deletar)
+  motivoNaoAgendamento: null,
   carregando      : false,
   numeroManual    : null,   // Guarda o número inserido manualmente
   statusSincronizado: false,
@@ -68,7 +69,7 @@ async function fbListarCancelados() {
 }
 
 async function fbSalvarMotivoNaoAgendamento(telefone, motivoNaoAgendamento) {
-  const resp = await fetch(`${FIREBASE_DB_URL}${FIREBASE_CONSULTAS_PATH}/${telefone}.json`, {
+  const resp = await fetch(`${FIREBASE_DB_URL}${FIREBASE_CONVERSAS_PATH}/${telefone}.json`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ motivoNaoAgendamento }),
@@ -78,6 +79,12 @@ async function fbSalvarMotivoNaoAgendamento(telefone, motivoNaoAgendamento) {
 }
 
 /** Adiciona um novo cancelado (usando o próprio número como chave via PUT) */
+async function fbConsultarMotivoNaoAgendamento(telefone) {
+  const resp = await fetch(`${FIREBASE_DB_URL}${FIREBASE_CONVERSAS_PATH}/${telefone}/motivoNaoAgendamento.json`);
+  if (!resp.ok) throw new Error(`Firebase GET motivo falhou: ${resp.status}`);
+  return await resp.json();
+}
+
 async function fbAdicionarCancelado(descricao, telefone, nomeContato = null) {
   const payload = { descricao, telefone };
   if (nomeContato) {
@@ -536,6 +543,7 @@ function criarWidget() {
             </div>
           </div>
           <button type="button" id="btn-salvar-nao-agendado">Salvar motivo</button>
+          <div id="pausa-ia-motivo-salvo-status" class="pausa-ia-bloqueados-info" hidden></div>
           <div id="pausa-ia-editor-motivos" hidden>
             <div id="pausa-ia-motivos-lista"></div>
             <div class="pausa-ia-motivos-novo">
@@ -573,9 +581,11 @@ function criarWidget() {
   const btnEditarMotivos = document.getElementById('btn-editar-motivos');
   const editorMotivos = document.getElementById('pausa-ia-editor-motivos');
   const statusNaoAgendado = document.getElementById('pausa-ia-nao-agendado-status');
+  const statusMotivoSalvo = document.getElementById('pausa-ia-motivo-salvo-status');
   painelBloqueadosEl = painelBloqueados;
   let motivosNaoAgendamento = [];
   let motivosNaoAgendamentoEdicao = [];
+  let timerBotaoMotivoSalvo = null;
 
   async function carregarBloqueados() {
     listaBloqueados.innerHTML = '<div class="pausa-ia-bloqueados-info">Carregando...</div>';
@@ -616,12 +626,36 @@ function criarWidget() {
   function atualizarStatusNaoAgendado() {
     const telefoneAtual = estadoAtual.numeroExibido || estadoAtual.numeroFormatado;
     const podeSalvar = Boolean(estadoAtual.numeroFormatado && motivoSelecionado);
+    const motivoSalvo = normalizarTextoLista(estadoAtual.motivoNaoAgendamento);
 
     statusNaoAgendado.textContent = telefoneAtual
       ? `Contato atual: ${telefoneAtual}`
       : 'Nenhum contato detectado no momento.';
 
+    if (statusMotivoSalvo) {
+      if (telefoneAtual && motivoSalvo) {
+        statusMotivoSalvo.textContent = `Motivo salvo: ${motivoSalvo}`;
+        statusMotivoSalvo.removeAttribute('hidden');
+      } else {
+        statusMotivoSalvo.textContent = '';
+        statusMotivoSalvo.setAttribute('hidden', '');
+      }
+    }
+
     btnSalvarNaoAgendado.disabled = !podeSalvar;
+  }
+
+  function animarConfirmacaoMotivoSalvo() {
+    clearTimeout(timerBotaoMotivoSalvo);
+    btnSalvarNaoAgendado.classList.remove('salvo');
+    void btnSalvarNaoAgendado.offsetWidth;
+    btnSalvarNaoAgendado.textContent = 'Motivo salvo';
+    btnSalvarNaoAgendado.classList.add('salvo');
+
+    timerBotaoMotivoSalvo = setTimeout(() => {
+      btnSalvarNaoAgendado.classList.remove('salvo');
+      btnSalvarNaoAgendado.textContent = 'Salvar motivo';
+    }, 1600);
   }
 
   function escaparHtml(valor) {
@@ -797,6 +831,10 @@ function criarWidget() {
 
     try {
       await fbSalvarMotivoNaoAgendamento(estadoAtual.numeroFormatado, motivo);
+      estadoAtual.motivoNaoAgendamento = motivo;
+      motivoSelecionado = motivo;
+      atualizarStatusNaoAgendado();
+      animarConfirmacaoMotivoSalvo();
       mostrarToast(`Motivo salvo para ${estadoAtual.numeroFormatado}`);
     } catch (erro) {
       console.error('[Pausa IA] Erro ao salvar motivo de nao agendamento:', erro);
@@ -990,15 +1028,26 @@ function atualizarWidget() {
   const elTitulo = document.getElementById('pausa-ia-title');
   const elSwitch = document.getElementById('pausa-ia-switch');
   const statusNaoAgendado = document.getElementById('pausa-ia-nao-agendado-status');
+  const statusMotivoSalvo = document.getElementById('pausa-ia-motivo-salvo-status');
   const btnMotivoSelect = document.getElementById('btn-motivo-select');
   const btnSalvarNaoAgendado = document.getElementById('btn-salvar-nao-agendado');
   if (!widget) return;
 
   const telefoneAtual = estadoAtual.numeroExibido || estadoAtual.numeroFormatado;
+  const motivoSalvo = normalizarTextoLista(estadoAtual.motivoNaoAgendamento);
   if (statusNaoAgendado) {
     statusNaoAgendado.textContent = telefoneAtual
       ? `Contato atual: ${telefoneAtual}`
       : 'Nenhum contato detectado no momento.';
+  }
+  if (statusMotivoSalvo) {
+    if (telefoneAtual && motivoSalvo) {
+      statusMotivoSalvo.textContent = `Motivo salvo: ${motivoSalvo}`;
+      statusMotivoSalvo.removeAttribute('hidden');
+    } else {
+      statusMotivoSalvo.textContent = '';
+      statusMotivoSalvo.setAttribute('hidden', '');
+    }
   }
   if (btnMotivoSelect) btnMotivoSelect.disabled = false;
   if (btnSalvarNaoAgendado) btnSalvarNaoAgendado.disabled = !(estadoAtual.numeroFormatado && motivoSelecionado);
@@ -1208,14 +1257,21 @@ async function verificarStatusNoFirebase(numero) {
   estadoAtual.carregando = true;
   atualizarWidget();
   try {
-    const chave = await fbBuscarChavePorTelefone(numero);
+    const [chave, motivoSalvo] = await Promise.all([
+      fbBuscarChavePorTelefone(numero),
+      fbConsultarMotivoNaoAgendamento(numero),
+    ]);
     estadoAtual.iaPausada     = chave !== null;
     estadoAtual.chaveFirebase = chave;
+    estadoAtual.motivoNaoAgendamento = normalizarTextoLista(motivoSalvo);
+    motivoSelecionado = estadoAtual.motivoNaoAgendamento || '';
     estadoAtual.statusSincronizado = true;
   } catch (erro) {
     console.error('[Pausa IA] Erro ao verificar Firebase:', erro);
     estadoAtual.iaPausada     = false;
     estadoAtual.chaveFirebase = null;
+    estadoAtual.motivoNaoAgendamento = null;
+    motivoSelecionado = '';
     estadoAtual.statusSincronizado = false;
   } finally {
     estadoAtual.carregando = false;
@@ -1257,8 +1313,7 @@ async function aoMudarConversa() {
           estadoAtual.iaPausada       = true;
           estadoAtual.chaveFirebase   = vinculo.telefone;
           estadoAtual.entradaManualAtiva = true;
-          estadoAtual.statusSincronizado = true;
-          atualizarWidget();
+          await verificarStatusNoFirebase(vinculo.telefone);
           return;
         }
       } catch (erro) {
@@ -1272,6 +1327,8 @@ async function aoMudarConversa() {
     estadoAtual.numeroExibido   = null;
     estadoAtual.iaPausada       = false;
     estadoAtual.chaveFirebase   = null;
+    estadoAtual.motivoNaoAgendamento = null;
+    motivoSelecionado = '';
     estadoAtual.entradaManualAtiva = false;
     estadoAtual.statusSincronizado = true;
     atualizarWidget();
@@ -1284,6 +1341,8 @@ async function aoMudarConversa() {
   estadoAtual.numeroExibido   = contato.numeroRaw;
   estadoAtual.iaPausada       = false;
   estadoAtual.chaveFirebase   = null;
+  estadoAtual.motivoNaoAgendamento = null;
+  motivoSelecionado = '';
   estadoAtual.entradaManualAtiva = false;
   estadoAtual.statusSincronizado = false;
 
