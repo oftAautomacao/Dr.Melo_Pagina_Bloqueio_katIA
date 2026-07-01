@@ -18,6 +18,7 @@
 // (Configurações agora vêm do firebase-config.js, injetado antes pelo manifest)
 // FIREBASE_DB_URL e FIREBASE_PATH são definidos lá.
 const FIREBASE_CONVERSAS_PATH = "/DRM/agendamentoWhatsApp/operacional/conversas";
+const FIREBASE_MOTIVOS_NAO_AGENDAMENTO_PATH = "/DRM/agendamentoWhatsApp/configuracoes/consultasNaoAgendadas/listaMotivos";
 const STORAGE_MOTIVOS_NAO_AGENDAMENTO = 'pausa_ia_motivos_nao_agendamento';
 const MOTIVOS_NAO_AGENDAMENTO_PADRAO = [
   'Paciente desistiu',
@@ -82,6 +83,22 @@ async function fbSalvarMotivoNaoAgendamento(telefone, motivoNaoAgendamento) {
 async function fbConsultarMotivoNaoAgendamento(telefone) {
   const resp = await fetch(`${FIREBASE_DB_URL}${FIREBASE_CONVERSAS_PATH}/${telefone}/motivoNaoAgendamento.json`);
   if (!resp.ok) throw new Error(`Firebase GET motivo falhou: ${resp.status}`);
+  return await resp.json();
+}
+
+async function fbCarregarMotivosNaoAgendamento() {
+  const resp = await fetch(`${FIREBASE_DB_URL}${FIREBASE_MOTIVOS_NAO_AGENDAMENTO_PATH}.json`);
+  if (!resp.ok) throw new Error(`Firebase GET motivos falhou: ${resp.status}`);
+  return await resp.json();
+}
+
+async function fbSalvarListaMotivosNaoAgendamento(motivos) {
+  const resp = await fetch(`${FIREBASE_DB_URL}${FIREBASE_MOTIVOS_NAO_AGENDAMENTO_PATH}.json`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(motivos),
+  });
+  if (!resp.ok) throw new Error(`Firebase PUT motivos falhou: ${resp.status}`);
   return await resp.json();
 }
 
@@ -236,15 +253,17 @@ function chaveTextoLista(valor) {
   return normalizarTextoLista(valor).toLowerCase();
 }
 
-async function carregarMotivosNaoAgendamento() {
-  const salvos = await lerStorageLocal(STORAGE_MOTIVOS_NAO_AGENDAMENTO);
-  const origem = Array.isArray(salvos)
-    ? salvos
-    : MOTIVOS_NAO_AGENDAMENTO_PADRAO;
+function normalizarListaMotivos(origem) {
+  const itens = Array.isArray(origem)
+    ? origem
+    : origem && typeof origem === 'object'
+      ? Object.values(origem)
+      : [];
 
   const vistos = new Set();
   const motivos = [];
-  for (const item of origem) {
+
+  for (const item of itens) {
     const texto = normalizarTextoLista(item);
     if (!texto) continue;
 
@@ -255,28 +274,51 @@ async function carregarMotivosNaoAgendamento() {
     motivos.push(texto);
   }
 
-  if (!Array.isArray(salvos) || salvos.length !== motivos.length) {
+  return motivos;
+}
+
+function listasMotivosIguais(a, b) {
+  if (a.length !== b.length) return false;
+  return a.every((item, indice) => chaveTextoLista(item) === chaveTextoLista(b[indice]));
+}
+
+async function carregarMotivosNaoAgendamento() {
+  const salvosLocais = await lerStorageLocal(STORAGE_MOTIVOS_NAO_AGENDAMENTO);
+  const motivosLocais = normalizarListaMotivos(salvosLocais);
+
+  let salvosFirebase = null;
+  let erroFirebase = null;
+
+  try {
+    salvosFirebase = await fbCarregarMotivosNaoAgendamento();
+  } catch (erro) {
+    erroFirebase = erro;
+    console.error('[Pausa IA] Erro ao carregar lista de motivos do Firebase:', erro);
+  }
+
+  const motivosFirebase = normalizarListaMotivos(salvosFirebase);
+  const motivosPadrao = normalizarListaMotivos(MOTIVOS_NAO_AGENDAMENTO_PADRAO);
+
+  const motivos = motivosFirebase.length
+    ? motivosFirebase
+    : motivosLocais.length
+      ? motivosLocais
+      : motivosPadrao;
+
+  if (!listasMotivosIguais(motivosLocais, motivos)) {
     await salvarStorageLocal(STORAGE_MOTIVOS_NAO_AGENDAMENTO, motivos);
+  }
+
+  if (!motivosFirebase.length && !erroFirebase) {
+    await fbSalvarListaMotivosNaoAgendamento(motivos);
   }
 
   return motivos;
 }
 
 async function salvarMotivosNaoAgendamento(motivos) {
-  const vistos = new Set();
-  const limpos = [];
-
-  for (const item of motivos) {
-    const texto = normalizarTextoLista(item);
-    if (!texto) continue;
-
-    const chave = chaveTextoLista(texto);
-    if (vistos.has(chave)) continue;
-
-    vistos.add(chave);
-    limpos.push(texto);
-  }
-
+  const limpos = normalizarListaMotivos(motivos);
+  await fbSalvarListaMotivosNaoAgendamento(limpos);
   await salvarStorageLocal(STORAGE_MOTIVOS_NAO_AGENDAMENTO, limpos);
   return limpos;
 }
