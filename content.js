@@ -18,7 +18,8 @@
 // (Configurações agora vêm do firebase-config.js, injetado antes pelo manifest)
 // FIREBASE_DB_URL e FIREBASE_PATH são definidos lá.
 const FIREBASE_CONVERSAS_PATH = "/DRM/agendamentoWhatsApp/operacional/conversas";
-const FIREBASE_MOTIVOS_NAO_AGENDAMENTO_PATH = "/DRM/agendamentoWhatsApp/configuracoes/consultasNaoAgendadas/listaMotivos";
+const FIREBASE_CONSULTAS_NAO_AGENDADAS_PATH = "/DRM/agendamentoWhatsApp/configuracoes/consultasNaoAgendadas";
+const FIREBASE_MOTIVOS_NAO_AGENDAMENTO_PATH = `${FIREBASE_CONSULTAS_NAO_AGENDADAS_PATH}/listaMotivos`;
 const STORAGE_MOTIVOS_NAO_AGENDAMENTO = 'pausa_ia_motivos_nao_agendamento';
 const MOTIVOS_NAO_AGENDAMENTO_PADRAO = [
   'Paciente desistiu',
@@ -79,6 +80,14 @@ async function fbSalvarMotivoNaoAgendamento(telefone, motivoNaoAgendamento) {
   return await resp.json();
 }
 
+async function fbRemoverMotivoNaoAgendamento(telefone) {
+  const resp = await fetch(`${FIREBASE_DB_URL}${FIREBASE_CONVERSAS_PATH}/${telefone}/motivoNaoAgendamento.json`, {
+    method: 'DELETE',
+  });
+  if (!resp.ok) throw new Error(`Firebase DELETE motivo falhou: ${resp.status}`);
+  return await resp.json();
+}
+
 /** Adiciona um novo cancelado (usando o próprio número como chave via PUT) */
 async function fbConsultarMotivoNaoAgendamento(telefone) {
   const resp = await fetch(`${FIREBASE_DB_URL}${FIREBASE_CONVERSAS_PATH}/${telefone}/motivoNaoAgendamento.json`);
@@ -87,18 +96,31 @@ async function fbConsultarMotivoNaoAgendamento(telefone) {
 }
 
 async function fbCarregarMotivosNaoAgendamento() {
-  const resp = await fetch(`${FIREBASE_DB_URL}${FIREBASE_MOTIVOS_NAO_AGENDAMENTO_PATH}.json`);
-  if (!resp.ok) throw new Error(`Firebase GET motivos falhou: ${resp.status}`);
-  return await resp.json();
+  const resp = await fetch(`${FIREBASE_DB_URL}${FIREBASE_CONSULTAS_NAO_AGENDADAS_PATH}.json`, {
+    cache: 'no-store',
+  });
+  if (!resp.ok) {
+    const detalhe = await resp.text();
+    throw new Error(`Firebase GET motivos falhou: ${resp.status}${detalhe ? ` - ${detalhe}` : ''}`);
+  }
+  const dados = await resp.json();
+  if (Array.isArray(dados)) return dados;
+  if (dados && typeof dados === 'object') {
+    return dados.listaMotivos || [];
+  }
+  return [];
 }
 
 async function fbSalvarListaMotivosNaoAgendamento(motivos) {
-  const resp = await fetch(`${FIREBASE_DB_URL}${FIREBASE_MOTIVOS_NAO_AGENDAMENTO_PATH}.json`, {
-    method: 'PUT',
+  const resp = await fetch(`${FIREBASE_DB_URL}${FIREBASE_CONSULTAS_NAO_AGENDADAS_PATH}.json`, {
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(motivos),
+    body: JSON.stringify({ listaMotivos: motivos }),
   });
-  if (!resp.ok) throw new Error(`Firebase PUT motivos falhou: ${resp.status}`);
+  if (!resp.ok) {
+    const detalhe = await resp.text();
+    throw new Error(`Firebase PATCH motivos falhou: ${resp.status}${detalhe ? ` - ${detalhe}` : ''}`);
+  }
   return await resp.json();
 }
 
@@ -178,13 +200,12 @@ function salvarStorageLocal(chave, valor) {
 // ──────────────────────────────────────────────
 
 /**
- * Remove tudo que não for dígito e normaliza para o padrão:
- *   55 + DDD + número
+ * Remove tudo que não for dígito e normaliza o telefone.
  *
  * Regras:
  * - 8 ou 9 dígitos: assume DDD 21 e adiciona 55
  * - 10 ou 11 dígitos: assume que já tem DDD e adiciona 55
- * - 12 ou 13 dígitos iniciando com 55: mantém como está
+ * - 11 a 15 dígitos iniciando com código de país: mantém como está
  * - Remove zeros à esquerda comuns em prefixos de discagem (ex: 021...)
  */
 async function fbBuscarCanceladoPorNome(nomeContato) {
@@ -226,12 +247,16 @@ function formatarNumero(raw) {
     return '55' + limpo;
   }
 
+  if (limpo.length >= 11 && limpo.length <= 15) {
+    return limpo;
+  }
+
   return limpo;
 }
 
-/** Verifica se o número já está no padrão 55 + DDD + número */
+/** Verifica se o número tem formato plausível para uso como chave/telefone */
 function pareceNumeroValido(num) {
-  return /^55\d{10,11}$/.test(num);
+  return /^\d{11,15}$/.test(String(num || ''));
 }
 
 function normalizarNome(nome) {
@@ -297,20 +322,10 @@ async function carregarMotivosNaoAgendamento() {
   }
 
   const motivosFirebase = normalizarListaMotivos(salvosFirebase);
-  const motivosPadrao = normalizarListaMotivos(MOTIVOS_NAO_AGENDAMENTO_PADRAO);
-
-  const motivos = motivosFirebase.length
-    ? motivosFirebase
-    : motivosLocais.length
-      ? motivosLocais
-      : motivosPadrao;
+  const motivos = erroFirebase ? motivosLocais : motivosFirebase;
 
   if (!listasMotivosIguais(motivosLocais, motivos)) {
     await salvarStorageLocal(STORAGE_MOTIVOS_NAO_AGENDAMENTO, motivos);
-  }
-
-  if (!motivosFirebase.length && !erroFirebase) {
-    await fbSalvarListaMotivosNaoAgendamento(motivos);
   }
 
   return motivos;
@@ -483,7 +498,7 @@ function detectarContato() {
 
   // Estratégia B: varrer todos os elementos visíveis na tela (Regex)
   if (!numeroRaw) {
-    const padraoTelBR = /(\+55[\s\-]?\d{2}[\s\-]?\d{4,5}[\s\-]?\d{4})/;
+    const padraoTelVisivel = /(\+?\d[\d\s\-()]{7,}\d)/;
     const walker = document.createTreeWalker(
       document.querySelector('#main') || document.body,
       NodeFilter.SHOW_TEXT,
@@ -491,10 +506,13 @@ function detectarContato() {
     let node;
     while ((node = walker.nextNode())) {
       const texto = node.textContent.trim();
-      const match = texto.match(padraoTelBR);
+      const match = texto.match(padraoTelVisivel);
       if (match) {
-        numeroRaw = match[1];
-        break;
+        const candidato = formatarNumero(match[1]);
+        if (pareceNumeroValido(candidato)) {
+          numeroRaw = match[1];
+          break;
+        }
       }
     }
   }
@@ -547,8 +565,11 @@ function criarWidget() {
         <span id="pausa-ia-status-flash" aria-live="polite"></span>
       </button>
       <div class="pausa-ia-divider"></div>
-      <span id="pausa-ia-numero" title="Clique para inserir manualmente">—</span>
-      <input type="text" id="pausa-ia-input-manual" placeholder="Cole o telefone" maxlength="20" />
+      <div id="pausa-ia-contato">
+        <span id="pausa-ia-numero" title="Clique para inserir manualmente">—</span>
+        <input type="text" id="pausa-ia-input-manual" placeholder="Cole o telefone" maxlength="25" />
+        <div id="pausa-ia-card-motivo-salvo" hidden></div>
+      </div>
       <div class="pausa-ia-divider"></div>
       <button id="btn-bloqueados" title="Abrir painel">▾</button>
     </div>
@@ -567,7 +588,13 @@ function criarWidget() {
           <span class="pausa-ia-painel-seta">▾</span>
         </button>
         <div class="pausa-ia-painel-secao" id="pausa-ia-secao-nao-agendado" hidden>
-          <div id="pausa-ia-nao-agendado-status" class="pausa-ia-bloqueados-info">Nenhum contato detectado no momento.</div>
+          <div id="pausa-ia-resumo-status" class="pausa-ia-bloqueados-info">
+            <div id="pausa-ia-nao-agendado-status">Nenhum contato detectado no momento.</div>
+            <div id="pausa-ia-motivo-salvo-linha" hidden>
+              <span id="pausa-ia-motivo-salvo-status"></span>
+              <button type="button" id="btn-remover-motivo-salvo" title="Remover motivo">×</button>
+            </div>
+          </div>
           <div class="pausa-ia-motivo-picker">
             <button type="button" id="btn-motivo-select" aria-expanded="false">
               <span id="pausa-ia-motivo-select-texto">Selecione um motivo</span>
@@ -585,13 +612,11 @@ function criarWidget() {
             </div>
           </div>
           <button type="button" id="btn-salvar-nao-agendado">Salvar motivo</button>
-          <div id="pausa-ia-motivo-salvo-status" class="pausa-ia-bloqueados-info" hidden></div>
           <div id="pausa-ia-editor-motivos" hidden>
             <div id="pausa-ia-motivos-lista"></div>
             <div class="pausa-ia-motivos-novo">
-              <input type="text" id="pausa-ia-motivo-novo" placeholder="Novo motivo" maxlength="80" />
-              <button type="button" id="btn-adicionar-motivo" title="Adicionar motivo">+</button>
-              <button type="button" id="btn-salvar-motivos" title="Salvar motivos">Salvar</button>
+              <input type="text" id="pausa-ia-motivo-novo" placeholder="Digite um novo motivo e clique em Salvar lista" maxlength="80" />
+              <button type="button" id="btn-salvar-motivos" title="Salvar lista de motivos">Salvar lista</button>
             </div>
           </div>
         </div>
@@ -618,12 +643,14 @@ function criarWidget() {
   const btnSalvarNaoAgendado = document.getElementById('btn-salvar-nao-agendado');
   const listaMotivos = document.getElementById('pausa-ia-motivos-lista');
   const inputMotivoNovo = document.getElementById('pausa-ia-motivo-novo');
-  const btnAdicionarMotivo = document.getElementById('btn-adicionar-motivo');
   const btnSalvarMotivos = document.getElementById('btn-salvar-motivos');
   const btnEditarMotivos = document.getElementById('btn-editar-motivos');
   const editorMotivos = document.getElementById('pausa-ia-editor-motivos');
+  const cardMotivoSalvo = document.getElementById('pausa-ia-card-motivo-salvo');
   const statusNaoAgendado = document.getElementById('pausa-ia-nao-agendado-status');
+  const linhaMotivoSalvo = document.getElementById('pausa-ia-motivo-salvo-linha');
   const statusMotivoSalvo = document.getElementById('pausa-ia-motivo-salvo-status');
+  const btnRemoverMotivoSalvo = document.getElementById('btn-remover-motivo-salvo');
   painelBloqueadosEl = painelBloqueados;
   let motivosNaoAgendamento = [];
   let motivosNaoAgendamentoEdicao = [];
@@ -671,17 +698,22 @@ function criarWidget() {
     const motivoSalvo = normalizarTextoLista(estadoAtual.motivoNaoAgendamento);
 
     statusNaoAgendado.textContent = telefoneAtual
-      ? `Contato atual: ${telefoneAtual}`
+      ? telefoneAtual
       : 'Nenhum contato detectado no momento.';
 
-    if (statusMotivoSalvo) {
+    if (statusMotivoSalvo && linhaMotivoSalvo) {
       if (telefoneAtual && motivoSalvo) {
-        statusMotivoSalvo.textContent = `Motivo salvo: ${motivoSalvo}`;
-        statusMotivoSalvo.removeAttribute('hidden');
+        statusMotivoSalvo.textContent = `Motivo: ${motivoSalvo}`;
+        linhaMotivoSalvo.removeAttribute('hidden');
       } else {
         statusMotivoSalvo.textContent = '';
-        statusMotivoSalvo.setAttribute('hidden', '');
+        linhaMotivoSalvo.setAttribute('hidden', '');
       }
+    }
+
+    if (cardMotivoSalvo) {
+      cardMotivoSalvo.textContent = '';
+      cardMotivoSalvo.setAttribute('hidden', '');
     }
 
     btnSalvarNaoAgendado.disabled = !podeSalvar;
@@ -708,8 +740,7 @@ function criarWidget() {
       .replace(/"/g, '&quot;');
   }
 
-  async function renderizarMotivosNaoAgendamento() {
-    motivosNaoAgendamento = await carregarMotivosNaoAgendamento();
+  function renderizarMotivosNaoAgendamentoUI() {
     if (motivoSelecionado && !motivosNaoAgendamento.some((motivo) => chaveTextoLista(motivo) === chaveTextoLista(motivoSelecionado))) {
       motivoSelecionado = '';
     }
@@ -731,6 +762,11 @@ function criarWidget() {
     }
 
     atualizarStatusNaoAgendado();
+  }
+
+  async function renderizarMotivosNaoAgendamento() {
+    motivosNaoAgendamento = await carregarMotivosNaoAgendamento();
+    renderizarMotivosNaoAgendamentoUI();
   }
 
   function renderizarListaEditorMotivos() {
@@ -910,36 +946,49 @@ function criarWidget() {
     atualizarEditorMotivos(abrir);
   });
 
-  btnAdicionarMotivo.addEventListener('click', async (e) => {
+  btnRemoverMotivoSalvo.addEventListener('click', async (e) => {
     e.stopPropagation();
 
+    if (!estadoAtual.numeroFormatado || !estadoAtual.motivoNaoAgendamento) {
+      return;
+    }
+
     try {
-      const novoMotivo = normalizarTextoLista(inputMotivoNovo.value);
-      if (!novoMotivo) return;
-
-      const existe = motivosNaoAgendamentoEdicao.some((item) => chaveTextoLista(item) === chaveTextoLista(novoMotivo));
-      if (existe) {
-        mostrarToast('Esse motivo ja existe');
-        inputMotivoNovo.value = '';
-        return;
-      }
-
-      motivosNaoAgendamentoEdicao = [
-        ...motivosNaoAgendamentoEdicao,
-        novoMotivo,
-      ];
-      inputMotivoNovo.value = '';
-      renderizarListaEditorMotivos();
+      await fbRemoverMotivoNaoAgendamento(estadoAtual.numeroFormatado);
+      estadoAtual.motivoNaoAgendamento = null;
+      motivoSelecionado = '';
+      renderizarMotivosNaoAgendamentoUI();
+      mostrarToast('Motivo removido');
     } catch (erro) {
-      console.error('[Pausa IA] Erro ao adicionar motivo:', erro);
-      mostrarToast('Erro ao adicionar motivo');
+      console.error('[Pausa IA] Erro ao remover motivo de nao agendamento:', erro);
+      mostrarToast('Erro ao remover motivo');
     }
   });
+
+  function adicionarMotivoEmEdicao() {
+    const novoMotivo = normalizarTextoLista(inputMotivoNovo.value);
+    if (!novoMotivo) return false;
+
+    const existe = motivosNaoAgendamentoEdicao.some((item) => chaveTextoLista(item) === chaveTextoLista(novoMotivo));
+    if (existe) {
+      mostrarToast('Esse motivo ja existe');
+      inputMotivoNovo.value = '';
+      return false;
+    }
+
+    motivosNaoAgendamentoEdicao = [
+      ...motivosNaoAgendamentoEdicao,
+      novoMotivo,
+    ];
+    inputMotivoNovo.value = '';
+    renderizarListaEditorMotivos();
+    return true;
+  }
 
   inputMotivoNovo.addEventListener('keydown', async (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    btnAdicionarMotivo.click();
+    btnSalvarMotivos.click();
   });
 
   listaMotivos.addEventListener('click', async (e) => {
@@ -964,13 +1013,14 @@ function criarWidget() {
     e.stopPropagation();
 
     try {
+      adicionarMotivoEmEdicao();
       motivosNaoAgendamento = await salvarMotivosNaoAgendamento(motivosNaoAgendamentoEdicao);
-      await renderizarMotivosNaoAgendamento();
+      renderizarMotivosNaoAgendamentoUI();
       atualizarEditorMotivos(false);
       mostrarToast('Lista de motivos salva');
     } catch (erro) {
       console.error('[Pausa IA] Erro ao salvar lista de motivos:', erro);
-      mostrarToast('Erro ao salvar lista');
+      mostrarToast(`Erro ao salvar lista: ${erro.message || 'falha no Firebase'}`);
     }
   });
 
@@ -1069,7 +1119,9 @@ function atualizarWidget() {
   const elNumero = document.getElementById('pausa-ia-numero');
   const elTitulo = document.getElementById('pausa-ia-title');
   const elSwitch = document.getElementById('pausa-ia-switch');
+  const cardMotivoSalvo = document.getElementById('pausa-ia-card-motivo-salvo');
   const statusNaoAgendado = document.getElementById('pausa-ia-nao-agendado-status');
+  const linhaMotivoSalvo = document.getElementById('pausa-ia-motivo-salvo-linha');
   const statusMotivoSalvo = document.getElementById('pausa-ia-motivo-salvo-status');
   const btnMotivoSelect = document.getElementById('btn-motivo-select');
   const btnSalvarNaoAgendado = document.getElementById('btn-salvar-nao-agendado');
@@ -1079,17 +1131,21 @@ function atualizarWidget() {
   const motivoSalvo = normalizarTextoLista(estadoAtual.motivoNaoAgendamento);
   if (statusNaoAgendado) {
     statusNaoAgendado.textContent = telefoneAtual
-      ? `Contato atual: ${telefoneAtual}`
+      ? telefoneAtual
       : 'Nenhum contato detectado no momento.';
   }
-  if (statusMotivoSalvo) {
+  if (statusMotivoSalvo && linhaMotivoSalvo) {
     if (telefoneAtual && motivoSalvo) {
-      statusMotivoSalvo.textContent = `Motivo salvo: ${motivoSalvo}`;
-      statusMotivoSalvo.removeAttribute('hidden');
+      statusMotivoSalvo.textContent = `Motivo: ${motivoSalvo}`;
+      linhaMotivoSalvo.removeAttribute('hidden');
     } else {
       statusMotivoSalvo.textContent = '';
-      statusMotivoSalvo.setAttribute('hidden', '');
+      linhaMotivoSalvo.setAttribute('hidden', '');
     }
+  }
+  if (cardMotivoSalvo) {
+    cardMotivoSalvo.textContent = '';
+    cardMotivoSalvo.setAttribute('hidden', '');
   }
   if (btnMotivoSelect) btnMotivoSelect.disabled = false;
   if (btnSalvarNaoAgendado) btnSalvarNaoAgendado.disabled = !(estadoAtual.numeroFormatado && motivoSelecionado);
