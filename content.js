@@ -20,6 +20,7 @@
 const FIREBASE_CONVERSAS_PATH = "/DRM/agendamentoWhatsApp/operacional/conversas";
 const FIREBASE_CONSULTAS_NAO_AGENDADAS_PATH = "/DRM/agendamentoWhatsApp/configuracoes/consultasNaoAgendadas";
 const FIREBASE_MOTIVOS_NAO_AGENDAMENTO_PATH = `${FIREBASE_CONSULTAS_NAO_AGENDADAS_PATH}/listaMotivos`;
+const FIREBASE_CONSOLE_DATA_URL = "https://console.firebase.google.com/u/0/project/oftautomacao-9b427/database/oftautomacao-9b427-default-rtdb/data";
 const STORAGE_MOTIVOS_NAO_AGENDAMENTO = 'pausa_ia_motivos_nao_agendamento';
 const MOTIVOS_NAO_AGENDAMENTO_PADRAO = [
   'Paciente desistiu',
@@ -50,8 +51,10 @@ let observerDOM = null;
 let timerDebounce = null;
 let painelBloqueadosEl = null;
 let recarregarListaBloqueados = async () => {};
+let atualizarAtalhoConversas = () => {};
 let intervaloLeituraAutomatica = null;
 let motivoSelecionado = '';
+let timerToast = null;
 
 // ──────────────────────────────────────────────
 // Utilitários Firebase (REST API)
@@ -122,6 +125,12 @@ async function fbSalvarListaMotivosNaoAgendamento(motivos) {
     throw new Error(`Firebase PATCH motivos falhou: ${resp.status}${detalhe ? ` - ${detalhe}` : ''}`);
   }
   return await resp.json();
+}
+
+function obterUrlConversaFirebase(telefone) {
+  if (!telefone) return null;
+  const caminho = `${FIREBASE_CONVERSAS_PATH}/${telefone}`;
+  return `${FIREBASE_CONSOLE_DATA_URL}/${caminho.replace(/\//g, '~2F')}?hl=pt`;
 }
 
 async function fbAdicionarCancelado(descricao, telefone, nomeContato = null) {
@@ -620,6 +629,10 @@ function criarWidget() {
             </div>
           </div>
         </div>
+        <button type="button" class="pausa-ia-painel-opcao" id="btn-abrir-conversa-firebase" title="Abrir conversa atual no Firebase" disabled>
+          <span>Conversas</span>
+          <span class="pausa-ia-painel-atalho-icone">↗</span>
+        </button>
       </div>
     </div>
   `;
@@ -633,9 +646,10 @@ function criarWidget() {
   const painelBloqueados = document.getElementById('pausa-ia-painel');
   const listaBloqueados = document.getElementById('pausa-ia-bloqueados-lista');
   const btnBloqueados = document.getElementById('btn-bloqueados');
-  const botoesPainel = Array.from(document.querySelectorAll('.pausa-ia-painel-opcao'));
+  const botoesPainel = Array.from(document.querySelectorAll('.pausa-ia-painel-opcao[data-secao]'));
   const secaoBloqueados = document.getElementById('pausa-ia-secao-bloqueados');
   const secaoNaoAgendado = document.getElementById('pausa-ia-secao-nao-agendado');
+  const btnAbrirConversaFirebase = document.getElementById('btn-abrir-conversa-firebase');
   const btnMotivoSelect = document.getElementById('btn-motivo-select');
   const textoMotivoSelect = document.getElementById('pausa-ia-motivo-select-texto');
   const dropdownMotivo = document.getElementById('pausa-ia-motivo-dropdown');
@@ -655,6 +669,20 @@ function criarWidget() {
   let motivosNaoAgendamento = [];
   let motivosNaoAgendamentoEdicao = [];
   let timerBotaoMotivoSalvo = null;
+
+  function atualizarAtalhoConversasUI() {
+    if (!btnAbrirConversaFirebase) return;
+
+    const telefone = estadoAtual.numeroFormatado;
+    const url = obterUrlConversaFirebase(telefone);
+
+    btnAbrirConversaFirebase.disabled = !url;
+    btnAbrirConversaFirebase.title = url
+      ? `Abrir conversas/${telefone} no Firebase`
+      : 'Nenhum contato detectado';
+  }
+
+  atualizarAtalhoConversas = atualizarAtalhoConversasUI;
 
   async function carregarBloqueados() {
     listaBloqueados.innerHTML = '<div class="pausa-ia-bloqueados-info">Carregando...</div>';
@@ -682,7 +710,18 @@ function criarWidget() {
       }
 
       listaBloqueados.innerHTML = telefones
-        .map(telefone => `<button type="button" class="pausa-ia-bloqueado-item" data-telefone="${telefone}" title="Clique para copiar">${telefone}</button>`)
+        .map((telefone) => {
+          const valor = escaparHtml(telefone);
+          return `
+            <div class="pausa-ia-bloqueado-linha" data-telefone="${valor}">
+              <span class="pausa-ia-bloqueado-numero">${valor}</span>
+              <div class="pausa-ia-bloqueado-acoes">
+                <button type="button" class="pausa-ia-bloqueado-acao" data-acao="copiar" data-telefone="${valor}" title="Copiar numero">&#128203;</button>
+                <button type="button" class="pausa-ia-bloqueado-acao excluir" data-acao="excluir" data-telefone="${valor}" title="Excluir numero">&times;</button>
+              </div>
+            </div>
+          `;
+        })
         .join('');
     } catch (erro) {
       console.error('[Pausa IA] Erro ao listar bloqueados:', erro);
@@ -871,6 +910,47 @@ function criarWidget() {
     }
   });
 
+  listaBloqueados.addEventListener('click', async (e) => {
+    const acao = e.target.closest('.pausa-ia-bloqueado-acao[data-acao][data-telefone]');
+    if (!acao) return;
+
+    const linha = acao.closest('.pausa-ia-bloqueado-linha[data-telefone]');
+    const telefone = acao.getAttribute('data-telefone');
+    if (!telefone) return;
+
+    if (acao.dataset.acao === 'copiar') {
+      try {
+        await navigator.clipboard.writeText(telefone);
+        mostrarToast('Numero copiado', 2500, linha || acao);
+      } catch (erro) {
+        console.error('[Pausa IA] Erro ao copiar nÃºmero:', erro);
+        mostrarToast('Erro ao copiar numero', 2500, linha || acao);
+      }
+      return;
+    }
+
+    if (acao.dataset.acao === 'excluir') {
+      acao.disabled = true;
+      try {
+        await fbRemoverCancelado(telefone);
+
+        if (estadoAtual.numeroFormatado === telefone) {
+          estadoAtual.iaPausada = false;
+          estadoAtual.chaveFirebase = null;
+          estadoAtual.statusSincronizado = true;
+          atualizarWidget();
+        }
+
+        mostrarToast('Paciente excluido', 2500, linha || acao);
+        await carregarBloqueados();
+      } catch (erro) {
+        console.error('[Pausa IA] Erro ao excluir nÃºmero:', erro);
+        acao.disabled = false;
+        mostrarToast('Erro ao excluir paciente', 2500, linha || acao);
+      }
+    }
+  });
+
   btnBloqueados.addEventListener('click', async (e) => {
     e.stopPropagation();
     const abrir = painelBloqueados.hasAttribute('hidden');
@@ -883,6 +963,18 @@ function criarWidget() {
       btnBloqueados.textContent = '▾';
       fecharSecoesPainel();
     }
+  });
+
+  btnAbrirConversaFirebase.addEventListener('click', (e) => {
+    e.stopPropagation();
+
+    const url = obterUrlConversaFirebase(estadoAtual.numeroFormatado);
+    if (!url) {
+      mostrarToast('Nenhum contato detectado');
+      return;
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer');
   });
 
   // Painel de acoes e entrada manual
@@ -1149,6 +1241,7 @@ function atualizarWidget() {
   }
   if (btnMotivoSelect) btnMotivoSelect.disabled = false;
   if (btnSalvarNaoAgendado) btnSalvarNaoAgendado.disabled = !(estadoAtual.numeroFormatado && motivoSelecionado);
+  atualizarAtalhoConversas();
   if (elSwitch) {
     elSwitch.setAttribute('aria-pressed', estadoAtual.iaPausada ? 'true' : 'false');
     elSwitch.setAttribute(
@@ -1187,12 +1280,47 @@ function atualizarWidget() {
   }
 }
 
-function mostrarToast(mensagem, duracao = 2500) {
+function mostrarToast(mensagem, duracao = 2500, ancoraEl = null) {
   const toast = document.getElementById('pausa-ia-toast');
-  if (!toast) return;
+  const widget = document.getElementById('pausa-ia-widget');
+  if (!toast || !widget) return;
+
   toast.textContent = mensagem;
+  toast.style.left = '';
+  toast.style.right = '0';
+  toast.style.top = 'calc(100% + 8px)';
+
+  if (ancoraEl) {
+    const widgetRect = widget.getBoundingClientRect();
+    const ancoraRect = ancoraEl.getBoundingClientRect();
+    const toastWidth = toast.offsetWidth;
+    const toastHeight = toast.offsetHeight;
+    let left = ancoraRect.left - widgetRect.left + 8;
+    let top = ancoraRect.top - widgetRect.top - toastHeight - 6;
+    const minLeft = -widgetRect.left + 12;
+    const maxLeft = window.innerWidth - widgetRect.left - toastWidth - 12;
+
+    if (top < 8) {
+      top = ancoraRect.bottom - widgetRect.top + 6;
+    }
+
+    left = Math.max(minLeft, Math.min(left, maxLeft));
+
+    toast.style.left = `${left}px`;
+    toast.style.right = 'auto';
+    toast.style.top = `${top}px`;
+  }
+
   toast.classList.add('visivel');
-  setTimeout(() => toast.classList.remove('visivel'), duracao);
+
+  if (timerToast) {
+    clearTimeout(timerToast);
+  }
+
+  timerToast = setTimeout(() => {
+    toast.classList.remove('visivel');
+    timerToast = null;
+  }, duracao);
 }
 
 function agendarLeituraContato(atraso = 0) {
