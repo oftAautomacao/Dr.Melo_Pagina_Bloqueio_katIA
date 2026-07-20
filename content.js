@@ -585,6 +585,10 @@ function criarWidget() {
     <div id="pausa-ia-painel" hidden>
       <div class="pausa-ia-painel-header">Acoes rapidas</div>
       <div class="pausa-ia-painel-body">
+        <button type="button" class="pausa-ia-painel-opcao" id="btn-abrir-conversa-firebase" title="Abrir conversa atual no Firebase" disabled>
+          <span>Logs</span>
+          <span class="pausa-ia-painel-atalho-icone">↗</span>
+        </button>
         <button type="button" class="pausa-ia-painel-opcao" data-secao="bloqueados" aria-expanded="false">
           <span>Cancelados</span>
           <span class="pausa-ia-painel-seta">▾</span>
@@ -592,47 +596,33 @@ function criarWidget() {
         <div class="pausa-ia-painel-secao" id="pausa-ia-secao-bloqueados" hidden>
           <div id="pausa-ia-bloqueados-lista"></div>
         </div>
-        <button type="button" class="pausa-ia-painel-opcao" data-secao="nao-agendado" aria-expanded="false">
-          <span>Paciente nao agendado</span>
-          <span class="pausa-ia-painel-seta">▾</span>
-        </button>
-        <div class="pausa-ia-painel-secao" id="pausa-ia-secao-nao-agendado" hidden>
-          <div id="pausa-ia-resumo-status" class="pausa-ia-bloqueados-info">
-            <div id="pausa-ia-nao-agendado-status">Nenhum contato detectado no momento.</div>
-            <div id="pausa-ia-motivo-salvo-linha" hidden>
-              <span id="pausa-ia-motivo-salvo-status"></span>
-              <button type="button" id="btn-remover-motivo-salvo" title="Remover motivo">×</button>
-            </div>
-          </div>
-          <div class="pausa-ia-motivo-picker">
-            <button type="button" id="btn-motivo-select" aria-expanded="false">
-              <span id="pausa-ia-motivo-select-texto">Selecione um motivo</span>
+        <div id="pausa-ia-secao-nao-agendado">
+          <div class="pausa-ia-secao-pequeno-titulo">Paciente não agendado</div>
+          <button type="button" class="pausa-ia-painel-opcao" id="btn-motivo-select" aria-expanded="false">
+            <span id="pausa-ia-motivo-select-texto">motivo</span>
+            <div class="pausa-ia-motivo-acoes-lado">
+              <span id="btn-remover-motivo-salvo" role="button" title="Remover motivo" hidden>×</span>
               <span class="pausa-ia-painel-seta">▾</span>
-            </button>
-            <div id="pausa-ia-motivo-dropdown" hidden>
-              <div class="pausa-ia-motivo-dropdown-layout">
-                <div id="pausa-ia-motivo-opcoes"></div>
-                <div class="pausa-ia-motivo-dropdown-acoes">
-                  <button type="button" id="btn-editar-motivos" class="pausa-ia-motivo-dropdown-editar" title="Editar motivos" aria-expanded="false">
-                    <span class="pausa-ia-editor-icone">&#9998;</span>
-                  </button>
-                </div>
+            </div>
+          </button>
+          <div id="pausa-ia-motivo-dropdown" hidden>
+            <div class="pausa-ia-motivo-dropdown-layout">
+              <div id="pausa-ia-motivo-opcoes"></div>
+              <div class="pausa-ia-motivo-dropdown-acoes">
+                <button type="button" id="btn-editar-motivos" class="pausa-ia-motivo-dropdown-editar" title="Editar motivos" aria-expanded="false">
+                  <span class="pausa-ia-editor-icone">&#9998;</span>
+                </button>
               </div>
             </div>
           </div>
-          <button type="button" id="btn-salvar-nao-agendado">Salvar motivo</button>
           <div id="pausa-ia-editor-motivos" hidden>
             <div id="pausa-ia-motivos-lista"></div>
             <div class="pausa-ia-motivos-novo">
-              <input type="text" id="pausa-ia-motivo-novo" placeholder="Digite um novo motivo e clique em Salvar lista" maxlength="80" />
-              <button type="button" id="btn-salvar-motivos" title="Salvar lista de motivos">Salvar lista</button>
+              <input type="text" id="pausa-ia-motivo-novo" placeholder="Digite um novo motivo" maxlength="80" />
+              <button type="button" id="btn-salvar-motivos" title="Salvar lista de motivos">Salvar</button>
             </div>
           </div>
         </div>
-        <button type="button" class="pausa-ia-painel-opcao" id="btn-abrir-conversa-firebase" title="Abrir conversa atual no Firebase" disabled>
-          <span>Conversas</span>
-          <span class="pausa-ia-painel-atalho-icone">↗</span>
-        </button>
       </div>
     </div>
   `;
@@ -654,16 +644,12 @@ function criarWidget() {
   const textoMotivoSelect = document.getElementById('pausa-ia-motivo-select-texto');
   const dropdownMotivo = document.getElementById('pausa-ia-motivo-dropdown');
   const opcoesMotivo = document.getElementById('pausa-ia-motivo-opcoes');
-  const btnSalvarNaoAgendado = document.getElementById('btn-salvar-nao-agendado');
   const listaMotivos = document.getElementById('pausa-ia-motivos-lista');
   const inputMotivoNovo = document.getElementById('pausa-ia-motivo-novo');
   const btnSalvarMotivos = document.getElementById('btn-salvar-motivos');
   const btnEditarMotivos = document.getElementById('btn-editar-motivos');
   const editorMotivos = document.getElementById('pausa-ia-editor-motivos');
   const cardMotivoSalvo = document.getElementById('pausa-ia-card-motivo-salvo');
-  const statusNaoAgendado = document.getElementById('pausa-ia-nao-agendado-status');
-  const linhaMotivoSalvo = document.getElementById('pausa-ia-motivo-salvo-linha');
-  const statusMotivoSalvo = document.getElementById('pausa-ia-motivo-salvo-status');
   const btnRemoverMotivoSalvo = document.getElementById('btn-remover-motivo-salvo');
   painelBloqueadosEl = painelBloqueados;
   let motivosNaoAgendamento = [];
@@ -732,43 +718,22 @@ function criarWidget() {
   recarregarListaBloqueados = carregarBloqueados;
 
   function atualizarStatusNaoAgendado() {
-    const telefoneAtual = estadoAtual.numeroExibido || estadoAtual.numeroFormatado;
-    const podeSalvar = Boolean(estadoAtual.numeroFormatado && motivoSelecionado);
     const motivoSalvo = normalizarTextoLista(estadoAtual.motivoNaoAgendamento);
 
-    statusNaoAgendado.textContent = telefoneAtual
-      ? telefoneAtual
-      : 'Nenhum contato detectado no momento.';
-
-    if (statusMotivoSalvo && linhaMotivoSalvo) {
-      if (telefoneAtual && motivoSalvo) {
-        statusMotivoSalvo.textContent = `Motivo: ${motivoSalvo}`;
-        linhaMotivoSalvo.removeAttribute('hidden');
-      } else {
-        statusMotivoSalvo.textContent = '';
-        linhaMotivoSalvo.setAttribute('hidden', '');
-      }
+    if (motivoSalvo) {
+      textoMotivoSelect.textContent = motivoSalvo;
+      textoMotivoSelect.classList.remove('pausa-ia-texto-placeholder');
+      btnRemoverMotivoSalvo.removeAttribute('hidden');
+    } else {
+      textoMotivoSelect.textContent = motivoSelecionado || 'motivo';
+      textoMotivoSelect.classList.add('pausa-ia-texto-placeholder');
+      btnRemoverMotivoSalvo.setAttribute('hidden', '');
     }
 
     if (cardMotivoSalvo) {
       cardMotivoSalvo.textContent = '';
       cardMotivoSalvo.setAttribute('hidden', '');
     }
-
-    btnSalvarNaoAgendado.disabled = !podeSalvar;
-  }
-
-  function animarConfirmacaoMotivoSalvo() {
-    clearTimeout(timerBotaoMotivoSalvo);
-    btnSalvarNaoAgendado.classList.remove('salvo');
-    void btnSalvarNaoAgendado.offsetWidth;
-    btnSalvarNaoAgendado.textContent = 'Motivo salvo';
-    btnSalvarNaoAgendado.classList.add('salvo');
-
-    timerBotaoMotivoSalvo = setTimeout(() => {
-      btnSalvarNaoAgendado.classList.remove('salvo');
-      btnSalvarNaoAgendado.textContent = 'Salvar motivo';
-    }, 1600);
   }
 
   function escaparHtml(valor) {
@@ -852,7 +817,6 @@ function criarWidget() {
 
   function fecharSecoesPainel() {
     secaoBloqueados.setAttribute('hidden', '');
-    secaoNaoAgendado.setAttribute('hidden', '');
     atualizarEditorMotivos(false);
     atualizarDropdownMotivos(false);
 
@@ -865,8 +829,10 @@ function criarWidget() {
   }
 
   async function alternarSecaoPainel(nomeSecao) {
-    const botao = botoesPainel.find((item) => item.dataset.secao === nomeSecao);
-    const secao = nomeSecao === 'bloqueados' ? secaoBloqueados : secaoNaoAgendado;
+    if (nomeSecao !== 'bloqueados') return;
+
+    const botao = botoesPainel.find((item) => item.dataset.secao === 'bloqueados');
+    const secao = secaoBloqueados;
     if (!botao || !secao) return;
 
     const estavaAberta = !secao.hasAttribute('hidden');
@@ -880,18 +846,7 @@ function criarWidget() {
     const seta = botao.querySelector('.pausa-ia-painel-seta');
     if (seta) seta.textContent = '▴';
 
-    if (nomeSecao === 'bloqueados') {
-      await carregarBloqueados();
-      return;
-    }
-
-    atualizarDropdownMotivos(false);
-    try {
-      await renderizarMotivosNaoAgendamento();
-    } catch (erro) {
-      console.error('[Pausa IA] Erro ao abrir motivos de nao agendamento:', erro);
-      mostrarToast('Erro ao carregar motivos');
-    }
+    await carregarBloqueados();
   }
 
   listaBloqueados.addEventListener('click', async (e) => {
@@ -958,6 +913,11 @@ function criarWidget() {
       painelBloqueados.removeAttribute('hidden');
       btnBloqueados.textContent = '▴';
       atualizarStatusNaoAgendado();
+      try {
+        await renderizarMotivosNaoAgendamento();
+      } catch (erro) {
+        console.error('[Pausa IA] Erro ao abrir motivos de nao agendamento:', erro);
+      }
     } else {
       painelBloqueados.setAttribute('hidden', '');
       btnBloqueados.textContent = '▾';
@@ -985,14 +945,21 @@ function criarWidget() {
     });
   }
 
-  btnSalvarNaoAgendado.addEventListener('click', async (e) => {
+  btnMotivoSelect.addEventListener('click', async (e) => {
     e.stopPropagation();
-
-    const motivo = normalizarTextoLista(motivoSelecionado);
-    if (!motivo) {
-      mostrarToast('Selecione um motivo');
-      return;
+    const abrir = dropdownMotivo.hasAttribute('hidden');
+    if (abrir) {
+      await renderizarMotivosNaoAgendamento();
     }
+    atualizarDropdownMotivos(abrir);
+  });
+
+  opcoesMotivo.addEventListener('click', async (e) => {
+    const botao = e.target.closest('.pausa-ia-motivo-opcao[data-motivo]');
+    if (!botao) return;
+
+    const motivo = normalizarTextoLista(botao.getAttribute('data-motivo'));
+    if (!motivo) return;
 
     if (!estadoAtual.numeroFormatado) {
       mostrarToast('Nenhum contato detectado');
@@ -1004,31 +971,13 @@ function criarWidget() {
       estadoAtual.motivoNaoAgendamento = motivo;
       motivoSelecionado = motivo;
       atualizarStatusNaoAgendado();
-      animarConfirmacaoMotivoSalvo();
-      mostrarToast(`Motivo salvo para ${estadoAtual.numeroFormatado}`);
+      mostrarToast(`Motivo salvo`);
+      atualizarDropdownMotivos(false);
+      await renderizarMotivosNaoAgendamento();
     } catch (erro) {
       console.error('[Pausa IA] Erro ao salvar motivo de nao agendamento:', erro);
       mostrarToast('Erro ao salvar motivo');
     }
-  });
-
-  btnMotivoSelect.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const abrir = dropdownMotivo.hasAttribute('hidden');
-    if (abrir) {
-      await renderizarMotivosNaoAgendamento();
-    }
-    atualizarDropdownMotivos(abrir);
-  });
-
-  opcoesMotivo.addEventListener('click', (e) => {
-    const botao = e.target.closest('.pausa-ia-motivo-opcao[data-motivo]');
-    if (!botao) return;
-
-    motivoSelecionado = normalizarTextoLista(botao.getAttribute('data-motivo'));
-    textoMotivoSelect.textContent = motivoSelecionado || 'Selecione um motivo';
-    atualizarDropdownMotivos(false);
-    void renderizarMotivosNaoAgendamento();
   });
 
   btnEditarMotivos.addEventListener('click', (e) => {
