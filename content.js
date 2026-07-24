@@ -52,9 +52,11 @@ let timerDebounce = null;
 let painelBloqueadosEl = null;
 let recarregarListaBloqueados = async () => {};
 let atualizarAtalhoConversas = () => {};
+let atualizarPainelNaoAgendado = () => {};
 let intervaloLeituraAutomatica = null;
 let motivoSelecionado = '';
 let timerToast = null;
+let sincronizacaoContatoId = 0;
 
 // ──────────────────────────────────────────────
 // Utilitários Firebase (REST API)
@@ -736,6 +738,8 @@ function criarWidget() {
     }
   }
 
+  atualizarPainelNaoAgendado = atualizarStatusNaoAgendado;
+
   function escaparHtml(valor) {
     return String(valor)
       .replace(/&/g, '&amp;')
@@ -1188,6 +1192,7 @@ function atualizarWidget() {
     cardMotivoSalvo.textContent = '';
     cardMotivoSalvo.setAttribute('hidden', '');
   }
+  atualizarPainelNaoAgendado();
   if (btnMotivoSelect) btnMotivoSelect.disabled = false;
   if (btnSalvarNaoAgendado) btnSalvarNaoAgendado.disabled = !(estadoAtual.numeroFormatado && motivoSelecionado);
   atualizarAtalhoConversas();
@@ -1428,7 +1433,7 @@ async function aoClicarToggle() {
 // Verificação de status no Firebase
 // ──────────────────────────────────────────────
 
-async function verificarStatusNoFirebase(numero) {
+async function verificarStatusNoFirebase(numero, sincronizacaoId = sincronizacaoContatoId) {
   estadoAtual.carregando = true;
   atualizarWidget();
   try {
@@ -1436,6 +1441,9 @@ async function verificarStatusNoFirebase(numero) {
       fbBuscarChavePorTelefone(numero),
       fbConsultarMotivoNaoAgendamento(numero),
     ]);
+    if (sincronizacaoId !== sincronizacaoContatoId || estadoAtual.numeroFormatado !== numero) {
+      return;
+    }
     estadoAtual.iaPausada     = chave !== null;
     estadoAtual.chaveFirebase = chave;
     estadoAtual.motivoNaoAgendamento = normalizarTextoLista(motivoSalvo);
@@ -1443,12 +1451,18 @@ async function verificarStatusNoFirebase(numero) {
     estadoAtual.statusSincronizado = true;
   } catch (erro) {
     console.error('[Pausa IA] Erro ao verificar Firebase:', erro);
+    if (sincronizacaoId !== sincronizacaoContatoId || estadoAtual.numeroFormatado !== numero) {
+      return;
+    }
     estadoAtual.iaPausada     = false;
     estadoAtual.chaveFirebase = null;
     estadoAtual.motivoNaoAgendamento = null;
     motivoSelecionado = '';
     estadoAtual.statusSincronizado = false;
   } finally {
+    if (sincronizacaoId !== sincronizacaoContatoId || estadoAtual.numeroFormatado !== numero) {
+      return;
+    }
     estadoAtual.carregando = false;
     atualizarWidget();
   }
@@ -1475,24 +1489,30 @@ async function aoMudarConversa() {
     estadoAtual.statusSincronizado
   ) return;
 
+  const sincronizacaoId = ++sincronizacaoContatoId;
+
   if (!contato) {
     if (estadoAtual.numeroManual) return; // Não apaga se estiver usando modo manual
 
     if (nomeVisivel) {
       try {
         const vinculo = await fbBuscarCanceladoPorNome(nomeVisivel);
+        if (sincronizacaoId !== sincronizacaoContatoId) return;
         if (vinculo && pareceNumeroValido(vinculo.telefone)) {
           estadoAtual.numeroFormatado = vinculo.telefone;
           estadoAtual.nomeContato     = nomeVisivel;
           estadoAtual.numeroExibido   = vinculo.telefone;
           estadoAtual.iaPausada       = true;
           estadoAtual.chaveFirebase   = vinculo.telefone;
+          estadoAtual.carregando      = false;
           estadoAtual.entradaManualAtiva = true;
-          await verificarStatusNoFirebase(vinculo.telefone);
+          atualizarWidget();
+          await verificarStatusNoFirebase(vinculo.telefone, sincronizacaoId);
           return;
         }
       } catch (erro) {
         console.error('[Pausa IA] Erro ao buscar vínculo por nome:', erro);
+        if (sincronizacaoId !== sincronizacaoContatoId) return;
         estadoAtual.statusSincronizado = false;
       }
     }
@@ -1504,6 +1524,7 @@ async function aoMudarConversa() {
     estadoAtual.chaveFirebase   = null;
     estadoAtual.motivoNaoAgendamento = null;
     motivoSelecionado = '';
+    estadoAtual.carregando      = false;
     estadoAtual.entradaManualAtiva = false;
     estadoAtual.statusSincronizado = true;
     atualizarWidget();
@@ -1518,10 +1539,12 @@ async function aoMudarConversa() {
   estadoAtual.chaveFirebase   = null;
   estadoAtual.motivoNaoAgendamento = null;
   motivoSelecionado = '';
+  estadoAtual.carregando      = false;
   estadoAtual.entradaManualAtiva = false;
   estadoAtual.statusSincronizado = false;
+  atualizarWidget();
 
-  await verificarStatusNoFirebase(contato.numeroFormatado);
+  await verificarStatusNoFirebase(contato.numeroFormatado, sincronizacaoId);
 }
 
 // ──────────────────────────────────────────────
