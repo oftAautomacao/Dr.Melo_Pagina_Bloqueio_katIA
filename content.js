@@ -130,8 +130,9 @@ async function fbSalvarListaMotivosNaoAgendamento(motivos) {
 }
 
 function obterUrlConversaFirebase(telefone) {
-  if (!telefone) return null;
-  const caminho = `${FIREBASE_CONVERSAS_PATH}/${telefone}`;
+  const telefoneLimpo = String(telefone || '').replace(/\D/g, '');
+  if (!telefoneLimpo) return null;
+  const caminho = `${FIREBASE_CONVERSAS_PATH}/${telefoneLimpo}`;
   return `${FIREBASE_CONSOLE_DATA_URL}/${caminho.replace(/\//g, '~2F')}?hl=pt`;
 }
 
@@ -582,15 +583,14 @@ function criarWidget() {
         <div id="pausa-ia-card-motivo-salvo" hidden></div>
       </div>
       <div class="pausa-ia-divider"></div>
-      <button id="btn-bloqueados" title="Abrir painel">▾</button>
+      <div id="pausa-ia-acoes-externas">
+        <button id="btn-abrir-conversa-firebase" type="button" class="pausa-ia-card-acao" title="Abrir conversa atual no Firebase" aria-label="Abrir conversa atual no Firebase" disabled>↗</button>
+        <button id="btn-bloqueados" type="button" class="pausa-ia-card-acao" title="Abrir painel" aria-controls="pausa-ia-painel" aria-expanded="false">▾</button>
+      </div>
     </div>
     <div id="pausa-ia-painel" hidden>
       <div class="pausa-ia-painel-header">Acoes rapidas</div>
       <div class="pausa-ia-painel-body">
-        <button type="button" class="pausa-ia-painel-opcao" id="btn-abrir-conversa-firebase" title="Abrir conversa atual no Firebase" disabled>
-          <span>Logs</span>
-          <span class="pausa-ia-painel-atalho-icone">↗</span>
-        </button>
         <button type="button" class="pausa-ia-painel-opcao" data-secao="bloqueados" aria-expanded="false">
           <span>Cancelados</span>
           <span class="pausa-ia-painel-seta">▾</span>
@@ -661,12 +661,13 @@ function criarWidget() {
   function atualizarAtalhoConversasUI() {
     if (!btnAbrirConversaFirebase) return;
 
-    const telefone = estadoAtual.numeroFormatado;
+    const telefone = estadoAtual.numeroExibido || estadoAtual.numeroFormatado;
     const url = obterUrlConversaFirebase(telefone);
+    const telefoneLimpo = String(telefone || '').replace(/\D/g, '');
 
     btnAbrirConversaFirebase.disabled = !url;
     btnAbrirConversaFirebase.title = url
-      ? `Abrir conversas/${telefone} no Firebase`
+      ? `Abrir conversas/${telefoneLimpo} no Firebase`
       : 'Nenhum contato detectado';
   }
 
@@ -916,6 +917,7 @@ function criarWidget() {
     if (abrir) {
       painelBloqueados.removeAttribute('hidden');
       btnBloqueados.textContent = '▴';
+      btnBloqueados.setAttribute('aria-expanded', 'true');
       atualizarStatusNaoAgendado();
       try {
         await renderizarMotivosNaoAgendamento();
@@ -925,6 +927,7 @@ function criarWidget() {
     } else {
       painelBloqueados.setAttribute('hidden', '');
       btnBloqueados.textContent = '▾';
+      btnBloqueados.setAttribute('aria-expanded', 'false');
       fecharSecoesPainel();
     }
   });
@@ -932,7 +935,8 @@ function criarWidget() {
   btnAbrirConversaFirebase.addEventListener('click', (e) => {
     e.stopPropagation();
 
-    const url = obterUrlConversaFirebase(estadoAtual.numeroFormatado);
+    const telefone = estadoAtual.numeroExibido || estadoAtual.numeroFormatado;
+    const url = obterUrlConversaFirebase(telefone);
     if (!url) {
       mostrarToast('Nenhum contato detectado');
       return;
@@ -1093,7 +1097,7 @@ function criarWidget() {
       estadoAtual.entradaManualAtiva = true;
       estadoAtual.nomeContato = nomeVisivel;
       estadoAtual.numeroFormatado = numero;
-      estadoAtual.numeroExibido = numero;
+      estadoAtual.numeroExibido = valor;
       pausarNumeroManual(numero, nomeVisivel);
     } else {
       mostrarToast('Número inválido');
@@ -1118,6 +1122,7 @@ function criarWidget() {
     // Ignora o clique se for nos botões ou checkbox (para não conflitar com a ação deles)
     if (
       e.target.closest('#pausa-ia-switch') ||
+      e.target.closest('#btn-abrir-conversa-firebase') ||
       e.target.closest('#btn-bloqueados') ||
       e.target.closest('#pausa-ia-input-manual') ||
       e.target.closest('#pausa-ia-painel')
@@ -1454,10 +1459,6 @@ async function verificarStatusNoFirebase(numero, sincronizacaoId = sincronizacao
     if (sincronizacaoId !== sincronizacaoContatoId || estadoAtual.numeroFormatado !== numero) {
       return;
     }
-    estadoAtual.iaPausada     = false;
-    estadoAtual.chaveFirebase = null;
-    estadoAtual.motivoNaoAgendamento = null;
-    motivoSelecionado = '';
     estadoAtual.statusSincronizado = false;
   } finally {
     if (sincronizacaoId !== sincronizacaoContatoId || estadoAtual.numeroFormatado !== numero) {
@@ -1526,7 +1527,7 @@ async function aoMudarConversa() {
     motivoSelecionado = '';
     estadoAtual.carregando      = false;
     estadoAtual.entradaManualAtiva = false;
-    estadoAtual.statusSincronizado = true;
+    estadoAtual.statusSincronizado = false;
     atualizarWidget();
     return;
   }
@@ -1539,7 +1540,7 @@ async function aoMudarConversa() {
   estadoAtual.chaveFirebase   = null;
   estadoAtual.motivoNaoAgendamento = null;
   motivoSelecionado = '';
-  estadoAtual.carregando      = false;
+  estadoAtual.carregando      = true;
   estadoAtual.entradaManualAtiva = false;
   estadoAtual.statusSincronizado = false;
   atualizarWidget();
