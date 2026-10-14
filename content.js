@@ -21,6 +21,9 @@ const FIREBASE_CONVERSAS_PATH = "/DRM/agendamentoWhatsApp/operacional/conversas"
 const FIREBASE_CONSULTAS_NAO_AGENDADAS_PATH = "/DRM/agendamentoWhatsApp/configuracoes/consultasNaoAgendadas";
 const FIREBASE_MOTIVOS_NAO_AGENDAMENTO_PATH = `${FIREBASE_CONSULTAS_NAO_AGENDADAS_PATH}/listaMotivos`;
 const FIREBASE_CONSOLE_DATA_URL = "https://console.firebase.google.com/u/0/project/oftautomacao-9b427/database/oftautomacao-9b427-default-rtdb/data";
+const AGENDAMENTOS_URL = "https://oftautomacao-9b427.web.app/visualizar-agendamentos";
+const CONVERSAS_URL = "https://oftautomacao-9b427.web.app/enviar-mensagem";
+const BUSCA_HORARIOS_URL = "https://oftautomacao-9b427.web.app/busca-horarios";
 const STORAGE_MOTIVOS_NAO_AGENDAMENTO = 'pausa_ia_motivos_nao_agendamento';
 const MOTIVOS_NAO_AGENDAMENTO_PADRAO = [
   'Paciente desistiu',
@@ -561,7 +564,8 @@ function criarWidget() {
   widget.className = 'sem-contato';
   
   const topPos = localStorage.getItem('pausa_ia_top') || '20px';
-  const leftPos = localStorage.getItem('pausa_ia_left') || (window.innerWidth - 300) + 'px';
+  const savedLeftPos = localStorage.getItem('pausa_ia_left');
+  const leftPos = savedLeftPos || '20px';
   
   widget.style.top = topPos;
   widget.style.left = leftPos;
@@ -584,6 +588,24 @@ function criarWidget() {
       </div>
       <div class="pausa-ia-divider"></div>
       <div id="pausa-ia-acoes-externas">
+        <button id="btn-abrir-conversas" type="button" class="pausa-ia-card-acao" title="Abrir conversa do paciente" aria-label="Abrir conversa do paciente" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"></path>
+            <path d="M8 8h8M8 12h5"></path>
+          </svg>
+        </button>
+        <button id="btn-abrir-busca-horarios" type="button" class="pausa-ia-card-acao" title="Buscar horarios para o paciente" aria-label="Buscar horarios para o paciente" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <circle cx="10.5" cy="10.5" r="6.5"></circle>
+            <path d="m15.5 15.5 5 5M10.5 7v4l2.5 1.5"></path>
+          </svg>
+        </button>
+        <button id="btn-abrir-agendamento" type="button" class="pausa-ia-card-acao" title="Agendar paciente atual" aria-label="Agendar paciente atual" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M7 3v3M17 3v3M4.5 9h15M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"></path>
+            <path d="m9 15 2 2 4-5"></path>
+          </svg>
+        </button>
         <button id="btn-abrir-conversa-firebase" type="button" class="pausa-ia-card-acao" title="Abrir conversa atual no Firebase" aria-label="Abrir conversa atual no Firebase" disabled>↗</button>
         <button id="btn-bloqueados" type="button" class="pausa-ia-card-acao" title="Abrir painel" aria-controls="pausa-ia-painel" aria-expanded="false">▾</button>
       </div>
@@ -630,6 +652,12 @@ function criarWidget() {
   `;
 
   document.body.appendChild(widget);
+  const currentTop = Number.parseFloat(widget.style.top) || 20;
+  const currentLeft = savedLeftPos
+    ? Number.parseFloat(savedLeftPos) || 20
+    : window.innerWidth - widget.offsetWidth - 20;
+  widget.style.left = `${Math.max(0, Math.min(currentLeft, window.innerWidth - widget.offsetWidth))}px`;
+  widget.style.top = `${Math.max(0, Math.min(currentTop, window.innerHeight - widget.offsetHeight))}px`;
   document.getElementById('pausa-ia-switch').addEventListener('click', async (e) => {
     e.stopPropagation();
     await aoClicarToggle();
@@ -641,6 +669,9 @@ function criarWidget() {
   const botoesPainel = Array.from(document.querySelectorAll('.pausa-ia-painel-opcao[data-secao]'));
   const secaoBloqueados = document.getElementById('pausa-ia-secao-bloqueados');
   const secaoNaoAgendado = document.getElementById('pausa-ia-secao-nao-agendado');
+  const btnAbrirConversas = document.getElementById('btn-abrir-conversas');
+  const btnAbrirBuscaHorarios = document.getElementById('btn-abrir-busca-horarios');
+  const btnAbrirAgendamento = document.getElementById('btn-abrir-agendamento');
   const btnAbrirConversaFirebase = document.getElementById('btn-abrir-conversa-firebase');
   const btnMotivoSelect = document.getElementById('btn-motivo-select');
   const textoMotivoSelect = document.getElementById('pausa-ia-motivo-select-texto');
@@ -659,16 +690,37 @@ function criarWidget() {
   let timerBotaoMotivoSalvo = null;
 
   function atualizarAtalhoConversasUI() {
-    if (!btnAbrirConversaFirebase) return;
-
     const telefone = estadoAtual.numeroExibido || estadoAtual.numeroFormatado;
     const url = obterUrlConversaFirebase(telefone);
     const telefoneLimpo = String(telefone || '').replace(/\D/g, '');
 
-    btnAbrirConversaFirebase.disabled = !url;
-    btnAbrirConversaFirebase.title = url
-      ? `Abrir conversas/${telefoneLimpo} no Firebase`
-      : 'Nenhum contato detectado';
+    if (btnAbrirConversas) {
+      btnAbrirConversas.disabled = !telefoneLimpo;
+      btnAbrirConversas.title = telefoneLimpo
+        ? `Abrir conversa do paciente ${telefoneLimpo}`
+        : 'Nenhum contato detectado';
+    }
+
+    if (btnAbrirBuscaHorarios) {
+      btnAbrirBuscaHorarios.disabled = !telefoneLimpo;
+      btnAbrirBuscaHorarios.title = telefoneLimpo
+        ? `Buscar horarios para o paciente ${telefoneLimpo}`
+        : 'Nenhum contato detectado';
+    }
+
+    if (btnAbrirAgendamento) {
+      btnAbrirAgendamento.disabled = !telefoneLimpo;
+      btnAbrirAgendamento.title = telefoneLimpo
+        ? `Agendar paciente ${telefoneLimpo}`
+        : 'Nenhum contato detectado';
+    }
+
+    if (btnAbrirConversaFirebase) {
+      btnAbrirConversaFirebase.disabled = !url;
+      btnAbrirConversaFirebase.title = url
+        ? `Abrir conversas/${telefoneLimpo} no Firebase`
+        : 'Nenhum contato detectado';
+    }
   }
 
   atualizarAtalhoConversas = atualizarAtalhoConversasUI;
@@ -855,15 +907,16 @@ function criarWidget() {
   }
 
   listaBloqueados.addEventListener('click', async (e) => {
-    const item = e.target.closest('.pausa-ia-bloqueado-item[data-telefone]');
+    const item = e.target.closest('.pausa-ia-bloqueado-numero');
     if (!item) return;
 
-    const telefone = item.getAttribute('data-telefone');
+    const telefone = item.closest('.pausa-ia-bloqueado-linha[data-telefone]')?.getAttribute('data-telefone');
     if (!telefone) return;
 
+    const telefoneLimpo = telefone.replace(/[\s\+\-]/g, '');
     try {
-      await navigator.clipboard.writeText(telefone);
-      mostrarToast(`Número copiado: ${telefone}`);
+      await navigator.clipboard.writeText(telefoneLimpo);
+      mostrarToast(`Número copiado: ${telefoneLimpo}`);
     } catch (erro) {
       console.error('[Pausa IA] Erro ao copiar número:', erro);
       mostrarToast('❌ Não foi possível copiar o número');
@@ -879,8 +932,9 @@ function criarWidget() {
     if (!telefone) return;
 
     if (acao.dataset.acao === 'copiar') {
+      const telefoneLimpo = telefone.replace(/[\s\+\-]/g, '');
       try {
-        await navigator.clipboard.writeText(telefone);
+        await navigator.clipboard.writeText(telefoneLimpo);
         mostrarToast('Numero copiado', 2500, linha || acao);
       } catch (erro) {
         console.error('[Pausa IA] Erro ao copiar nÃºmero:', erro);
@@ -930,6 +984,53 @@ function criarWidget() {
       btnBloqueados.setAttribute('aria-expanded', 'false');
       fecharSecoesPainel();
     }
+  });
+
+  btnAbrirAgendamento.addEventListener('click', (e) => {
+    e.stopPropagation();
+
+    const telefone = estadoAtual.numeroExibido || estadoAtual.numeroFormatado;
+    const telefoneLimpo = String(telefone || '').replace(/\D/g, '');
+    if (!telefoneLimpo) {
+      mostrarToast('Nenhum contato detectado');
+      return;
+    }
+
+    const url = new URL(AGENDAMENTOS_URL);
+    url.searchParams.set('telefone', telefoneLimpo);
+    url.searchParams.set('autopreencher', 'conversa');
+    window.open(url.toString(), '_blank', 'noopener,noreferrer');
+  });
+
+  btnAbrirConversas.addEventListener('click', (e) => {
+    e.stopPropagation();
+
+    const telefone = estadoAtual.numeroExibido || estadoAtual.numeroFormatado;
+    const telefoneLimpo = String(telefone || '').replace(/\D/g, '');
+    if (!telefoneLimpo) {
+      mostrarToast('Nenhum contato detectado');
+      return;
+    }
+
+    const url = new URL(CONVERSAS_URL);
+    url.searchParams.set('telefone', telefoneLimpo);
+    window.open(url.toString(), '_blank', 'noopener,noreferrer');
+  });
+
+  btnAbrirBuscaHorarios.addEventListener('click', (e) => {
+    e.stopPropagation();
+
+    const telefone = estadoAtual.numeroExibido || estadoAtual.numeroFormatado;
+    const telefoneLimpo = String(telefone || '').replace(/\D/g, '');
+    if (!telefoneLimpo) {
+      mostrarToast('Nenhum contato detectado');
+      return;
+    }
+
+    const url = new URL(BUSCA_HORARIOS_URL);
+    url.searchParams.set('telefone', telefoneLimpo);
+    url.searchParams.set('autopreencher', 'conversa');
+    window.open(url.toString(), '_blank', 'noopener,noreferrer');
   });
 
   btnAbrirConversaFirebase.addEventListener('click', (e) => {
@@ -1076,12 +1177,25 @@ function criarWidget() {
   const elNumero = document.getElementById('pausa-ia-numero');
   const inputManual = document.getElementById('pausa-ia-input-manual');
 
-  elNumero.addEventListener('click', (e) => {
+  elNumero.addEventListener('click', async (e) => {
     if (widget.classList.contains('sem-contato')) {
       e.stopPropagation();
       widget.classList.add('modo-manual');
       inputManual.value = '';
       inputManual.focus();
+      return;
+    }
+
+    const telefone = estadoAtual.numeroExibido || estadoAtual.numeroFormatado;
+    if (!telefone) return;
+
+    const telefoneLimpo = telefone.replace(/[\s\+\-]/g, '');
+    try {
+      await navigator.clipboard.writeText(telefoneLimpo);
+      mostrarToast('Numero copiado', 2500, elNumero);
+    } catch (erro) {
+      console.error('[Pausa IA] Erro ao copiar numero do contato atual:', erro);
+      mostrarToast('Erro ao copiar numero', 2500, elNumero);
     }
   });
 
@@ -1217,6 +1331,7 @@ function atualizarWidget() {
   if (estadoAtual.carregando) {
     widget.classList.add('carregando');
     elNumero.textContent = 'Buscando...';
+    elNumero.title = 'Buscando contato';
     if (elTitulo) elTitulo.textContent = 'IA';
     return;
   }
@@ -1224,11 +1339,13 @@ function atualizarWidget() {
   if (!estadoAtual.numeroFormatado) {
     widget.classList.add('sem-contato');
     elNumero.textContent = 'Sem contato';
+    elNumero.title = 'Clique para inserir manualmente';
     if (elTitulo) elTitulo.textContent = 'IA';
     return;
   }
 
   elNumero.textContent = estadoAtual.numeroExibido || estadoAtual.numeroFormatado;
+  elNumero.title = 'Clique para copiar';
 
   if (estadoAtual.iaPausada) {
     widget.classList.add('ia-pausada');

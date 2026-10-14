@@ -453,6 +453,32 @@
   transform: none;
 }
 
+.pausa-ia-card-acao svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+#btn-abrir-agendamento {
+  color: rgba(18, 112, 177, 0.96);
+  border-color: rgba(18, 112, 177, 0.3);
+}
+
+#btn-abrir-conversas {
+  color: rgba(18, 140, 126, 0.98);
+  border-color: rgba(18, 140, 126, 0.34);
+}
+
+#btn-abrir-busca-horarios {
+  color: rgba(124, 58, 237, 0.96);
+  border-color: rgba(124, 58, 237, 0.3);
+}
+
 #btn-bloqueados {
   font-size: 13px;
 }
